@@ -12,6 +12,8 @@ from .resnext import *
 from .preact_resnet import *
 from .mobilenet import *
 from .mobilenetv2 import *
+from .mobilenetv2_wider import *
+from .mobilenetv2_deeper import *
 from .efficientnet import *
 from .regnet import *
 from .dla_simple import *
