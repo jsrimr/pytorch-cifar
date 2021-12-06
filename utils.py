@@ -215,11 +215,11 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
     parent_block_list = list(list(parent_net.layers)[stage_idx])
     child_block_list = list(list(child_net.layers)[stage_idx])
     # 차이나는 부분 핸들
-    block_weights = []
+    block_weight_list = []
     for i, (parent_block1, child_block1) in enumerate(zip(parent_block_list, child_block_list)):
         is_last_stage = (stage_idx == len(child_net.layers) - 1) or (stage_idx == -1)
         if is_last_stage:
-            block1_ordered_dict, block2_ordered_dict = block_update(parent_block1, parent_net.conv2, child_block1, child_net.conv2, is_last_stage)
+            block_weight_list[-2:] = block_update(parent_block1, parent_net.conv2, child_block1, child_net.conv2, is_last_stage)
         else:
             if (i + 1) < len(parent_block_list):
                 parent_block2 = parent_block_list[i + 1]
@@ -228,8 +228,15 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
                 parent_block2 = list(list(parent_net.layers)[stage_idx])[0]
                 child_block2 = list(list(child_net.layers)[stage_idx])[0]
 
-            block1_ordered_dict, block2_ordered_dict = block_update(parent_block1, parent_block2, child_block1, child_block2, is_last_stage)
+            if block_weight_list:
+                block_weight_list[-2:] = block_update(BlockWeight(block_weight_list[-1]), parent_block2, child_block1, child_block2, is_last_stage)
+            else:
+                block_weight_list.extend(
+                    block_update(parent_block1, parent_block2, child_block1, child_block2, is_last_stage))
 
+    for weight, child_block in zip(block_weight_list, child_block_list):
+        child_block.load_state_dict(weight)
+    list(list(child_net.layers)[stage_idx])[0].load_state_dict(block_weight_list[-1])
 
 
 PLAN = [
@@ -268,28 +275,43 @@ def get_next_net(current_net, epoch):
     return
 
 
+class BlockWeight:
+    def __init__(self, state_dict: OrderedDict):
+        for k, v in state_dict.items():
+            setattr(self, k, v)
+
+
 def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, prev_state_dict=None):
+    """
+
+    :param block1_weight:
+    :param block2_weight:
+    :param wider_block1:
+    :param wider_block2:
+    :param last_stage:
+    :return: state_dict
+    """
     # BLOCK1 update
     new_state_dict1 = OrderedDict()
-    conv_3_w_wider = get_wider_weight(block1.conv3.weight.detach().numpy(), wider_block1.conv3.weight, axis=0)
+    conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0)
     bn_3_w_wider = process_bn_weight(block1.bn3, wider_block1.bn3)
 
     if wider_block1.shortcut:
-        shortcut_wider = get_wider_weight(block1.shortcut[0].weight.detach().numpy(), wider_block1.shortcut[0].weight,
+        shortcut_wider = get_wider_weight(block1.shortcut[0].weight, wider_block1.shortcut[0].weight,
                                           axis=0)
         bn_shortcut_wider = process_bn_weight(block1.shortcut[1], wider_block1.shortcut[1])
-        new_state_dict1['shortcut.0.weight'] = torch.from_numpy(shortcut_wider)
-        new_state_dict1['shortcut.1.weight'] = torch.from_numpy(bn_shortcut_wider[:, 0])
-        new_state_dict1['shortcut.1.bias'] = torch.from_numpy(bn_shortcut_wider[:, 1])
-        new_state_dict1['shortcut.1.running_mean'] = torch.from_numpy(bn_shortcut_wider[:, 2])
-        new_state_dict1['shortcut.1.running_var'] = torch.from_numpy(bn_shortcut_wider[:, 3])
+        new_state_dict1['shortcut.0.weight'] = shortcut_wider
+        new_state_dict1['shortcut.1.weight'] = bn_shortcut_wider[:, 0]
+        new_state_dict1['shortcut.1.bias'] = bn_shortcut_wider[:, 1]
+        new_state_dict1['shortcut.1.running_mean'] = bn_shortcut_wider[:, 2]
+        new_state_dict1['shortcut.1.running_var'] = bn_shortcut_wider[:, 3]
         new_state_dict1['shortcut.1.num_batches_tracked'] = block1.shortcut[1].state_dict()['num_batches_tracked']
 
     if last_stage:
         # block2 가 그냥 conv_layer 임
-        wider_block2_conv1_w = get_wider_weight(block2.weight.detach().numpy(), wider_block2.weight, axis=1)
+        wider_block2_conv1_w = get_wider_weight(block2.weight, wider_block2.weight, axis=1)
     else:
-        wider_block2_conv1_w = get_wider_weight(block2.conv1.weight.detach().numpy(), wider_block2.conv1.weight, axis=1)
+        wider_block2_conv1_w = get_wider_weight(block2.conv1.weight, wider_block2.conv1.weight, axis=1)
 
     new_state_dict1['conv1.weight'] = block1.conv1.state_dict()['weight']
     new_state_dict1['bn1.weight'] = block1.bn1.state_dict()['weight']
@@ -305,11 +327,11 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, p
     new_state_dict1['bn2.running_var'] = block1.bn2.state_dict()['running_var']
     new_state_dict1['bn2.num_batches_tracked'] = block1.bn2.state_dict()['num_batches_tracked']
 
-    new_state_dict1['conv3.weight'] = torch.from_numpy(conv_3_w_wider)
-    new_state_dict1['bn3.weight'] = torch.from_numpy(bn_3_w_wider[:, 0])
-    new_state_dict1['bn3.bias'] = torch.from_numpy(bn_3_w_wider[:, 1])
-    new_state_dict1['bn3.running_mean'] = torch.from_numpy(bn_3_w_wider[:, 2])
-    new_state_dict1['bn3.running_var'] = torch.from_numpy(bn_3_w_wider[:, 3])
+    new_state_dict1['conv3.weight'] = conv_3_w_wider
+    new_state_dict1['bn3.weight'] = bn_3_w_wider[:, 0]
+    new_state_dict1['bn3.bias'] = bn_3_w_wider[:, 1]
+    new_state_dict1['bn3.running_mean'] = bn_3_w_wider[:, 2]
+    new_state_dict1['bn3.running_var'] = bn_3_w_wider[:, 3]
     new_state_dict1['bn3.num_batches_tracked'] = block1.bn3.state_dict()['num_batches_tracked']
 
     # wider_block1.load_state_dict(new_state_dict)
@@ -317,53 +339,53 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, p
     # BLOCK2 update
     new_state_dict2 = OrderedDict()
     if last_stage:
-        # wider_block2.data = torch.from_numpy(wider_block2_conv1_w)
+        # wider_block2.data = wider_block2_conv1_w
         # wider_block2.weight.data = torch.zeros_like(wider_block2.weight)
-        new_state_dict2['weight'] = torch.from_numpy(wider_block2_conv1_w)
+        new_state_dict2['weight'] = wider_block2_conv1_w
         wider_block2.load_state_dict(new_state_dict2)
         return
     else:
         # conv_1, bn1 c_out expand
         wider_block2_conv1_w = get_wider_weight(wider_block2_conv1_w,
-                                                wider_block2.conv1.weight.detach().numpy(), 0)
+                                                wider_block2.conv1.weight, 0)
         bn_1_w_wider = process_bn_weight(block2.bn1, wider_block2.bn1)
 
         # conv_2 update
-        wider_block2_conv2_w = get_wider_weight(block2.conv2.weight.detach().numpy(),
-                                                wider_block2.conv2.weight.detach().numpy(), axis=0)
+        wider_block2_conv2_w = get_wider_weight(block2.conv2.weight,
+                                                wider_block2.conv2.weight, axis=0)
         # bn2 update
         bn_2_w_wider = process_bn_weight(block2.bn2, wider_block2.bn2)
         # new_weights.append(bn_1_w_wider)
 
         # conv_3 update with normalization, bn3 는 shape 업데이트 필요없음
-        wider_block2_conv3_w = get_wider_weight(block2.conv3.weight.detach().numpy(),
-                                                wider_block2.conv3.weight.detach().numpy(), axis=1)
+        wider_block2_conv3_w = get_wider_weight(block2.conv3.weight,
+                                                wider_block2.conv3.weight, axis=1)
         if block2.shortcut:  # 쓰일일이 없을 것 같음
-            shortcut_wider = get_wider_weight(block2.shortcut[0].weight.detach().numpy(),
+            shortcut_wider = get_wider_weight(block2.shortcut[0].weight,
                                               wider_block2.shortcut[0].weight,
                                               axis=1)
-            new_state_dict2['shortcut.0.weight'] = torch.from_numpy(shortcut_wider)
+            new_state_dict2['shortcut.0.weight'] = shortcut_wider
             new_state_dict2['shortcut.1.weight'] = block2.shortcut[1].state_dict()['weight']
             new_state_dict2['shortcut.1.bias'] = block2.shortcut[1].state_dict()['bias']
             new_state_dict2['shortcut.1.running_mean'] = block2.shortcut[1].state_dict()['running_mean']
             new_state_dict2['shortcut.1.running_var'] = block2.shortcut[1].state_dict()['running_var']
             new_state_dict2['shortcut.1.num_batches_tracked'] = block2.shortcut[1].state_dict()['num_batches_tracked']
 
-        new_state_dict2['conv1.weight'] = torch.from_numpy(wider_block2_conv1_w)
-        new_state_dict2['bn1.weight'] = torch.from_numpy(bn_1_w_wider[:, 0])
-        new_state_dict2['bn1.bias'] = torch.from_numpy(bn_1_w_wider[:, 1])
-        new_state_dict2['bn1.running_mean'] = torch.from_numpy(bn_1_w_wider[:, 2])
-        new_state_dict2['bn1.running_var'] = torch.from_numpy(bn_1_w_wider[:, 3])
+        new_state_dict2['conv1.weight'] = wider_block2_conv1_w
+        new_state_dict2['bn1.weight'] = bn_1_w_wider[:, 0]
+        new_state_dict2['bn1.bias'] = bn_1_w_wider[:, 1]
+        new_state_dict2['bn1.running_mean'] = bn_1_w_wider[:, 2]
+        new_state_dict2['bn1.running_var'] = bn_1_w_wider[:, 3]
         new_state_dict2['bn1.num_batches_tracked'] = block2.bn1.state_dict()['num_batches_tracked']
 
-        new_state_dict2['conv2.weight'] = torch.from_numpy(wider_block2_conv2_w)
-        new_state_dict2['bn2.weight'] = torch.from_numpy(bn_2_w_wider[:, 0])
-        new_state_dict2['bn2.bias'] = torch.from_numpy(bn_2_w_wider[:, 1])
-        new_state_dict2['bn2.running_mean'] = torch.from_numpy(bn_2_w_wider[:, 2])
-        new_state_dict2['bn2.running_var'] = torch.from_numpy(bn_2_w_wider[:, 3])
+        new_state_dict2['conv2.weight'] = wider_block2_conv2_w
+        new_state_dict2['bn2.weight'] = bn_2_w_wider[:, 0]
+        new_state_dict2['bn2.bias'] = bn_2_w_wider[:, 1]
+        new_state_dict2['bn2.running_mean'] = bn_2_w_wider[:, 2]
+        new_state_dict2['bn2.running_var'] = bn_2_w_wider[:, 3]
         new_state_dict2['bn2.num_batches_tracked'] = block2.bn2.state_dict()['num_batches_tracked']
 
-        new_state_dict2['conv3.weight'] = torch.from_numpy(wider_block2_conv3_w)
+        new_state_dict2['conv3.weight'] = wider_block2_conv3_w
         new_state_dict2['bn3.weight'] = block2.bn3.state_dict()['weight']
         new_state_dict2['bn3.bias'] = block2.bn3.state_dict()['bias']
         new_state_dict2['bn3.running_mean'] = block2.bn3.state_dict()['running_mean']
@@ -374,11 +396,11 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, p
         return [new_state_dict1, new_state_dict2]
 
 def process_bn_weight(parent_bn_w, child_bn_w):
-    idx = np.arange(child_bn_w.weight.detach().numpy().shape[0] - parent_bn_w.weight.detach().numpy().shape[0])
-    bn_w = np.stack([parent_bn_w.weight.detach().numpy(), parent_bn_w.bias.detach().numpy(),
-                     parent_bn_w.running_mean.detach().numpy(),
-                     parent_bn_w.running_var.detach().numpy()], axis=1)
-    bn_wider = np.concatenate((bn_w, bn_w[idx, :]), axis=0)
+    idx = torch.arange(child_bn_w.weight.shape[0] - parent_bn_w.weight.shape[0])
+    bn_w = torch.stack([parent_bn_w.weight, parent_bn_w.bias,
+                     parent_bn_w.running_mean,
+                     parent_bn_w.running_var], axis=1)
+    bn_wider = torch.cat((bn_w, bn_w[idx, :]), axis=0)
     return bn_wider
 
 
@@ -389,13 +411,13 @@ def get_wider_weight(parent_w, child_w, axis):
     :param axis: axis = 0 if c_out expansion, axis=1 if c_in expansion
     :return: larger_weight
     """
-    idx = np.arange(child_w.shape[axis] - parent_w.shape[axis])
+    idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
     if axis == 0:
         new_weight = parent_w[idx, :, :, :]
-        larger_weight = np.concatenate((parent_w, new_weight), axis=axis)
+        larger_weight = torch.cat((parent_w, new_weight), axis=axis)
     else:
         new_weight = parent_w[:, idx, :, :] / 2
-        larger_weight = np.concatenate((parent_w, new_weight), axis=axis)
+        larger_weight = torch.cat((parent_w, new_weight), axis=axis)
         larger_weight[:, idx, :, :] = new_weight
 
     return larger_weight
