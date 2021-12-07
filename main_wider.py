@@ -98,7 +98,7 @@ def test_net_level():
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
-        print(f"accuracy = {100. * correct / total}")
+        print(f"child accuracy = {100. * correct / total}")
 
     parent_net.eval().to(device)
     correct = 0
@@ -110,7 +110,7 @@ def test_net_level():
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
-        print(f"accuracy = {100. * correct / total}")
+        print(f"parent accuracy = {100. * correct / total}")
 
 
 def test_block_level():
