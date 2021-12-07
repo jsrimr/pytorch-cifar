@@ -13,6 +13,9 @@ class Block(nn.Module):
 
     def __init__(self, in_planes, out_planes, expansion, stride):
         super(Block, self).__init__()
+        self.in_planes = in_planes
+        self.out_planes = out_planes
+        self.expansion = expansion
         self.stride = stride
 
         planes = expansion * in_planes
