@@ -87,13 +87,13 @@ if __name__ == '__main__':
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
         assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+        checkpoint = torch.load('./checkpoint/b_a_s_e_ckpt.pth')
         net.load_state_dict(checkpoint['net'])
         best_acc = checkpoint['acc']
         start_epoch = checkpoint['epoch']
         print("loaded the model")
 
-    plan_idx = "base"
+    plan_idx = None
     interval = total_epoch // len(PLAN)
     for epoch in range(start_epoch, total_epoch):
         if epoch % interval == 0:
@@ -106,7 +106,9 @@ if __name__ == '__main__':
             print("=" * 100 + "\n", f"net changed! {PLAN[plan_idx]}" + "\n", "=" * 100)
 
         train(net, criterion, optimizer, trainloader, epoch, device, run)
-        test(net, criterion, testloader, epoch, device, run, f"{'_'.join(map(str, PLAN[plan_idx]))}")
+
+        exp_name = '_'.join(map(str, PLAN[plan_idx])) if plan_idx else "base"
+        test(net, criterion, testloader, epoch, device, run, exp_name)
         scheduler.step()
 
     run.stop()

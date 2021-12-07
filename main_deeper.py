@@ -45,13 +45,25 @@ def test_net_level():
     checkpoint = torch.load('./checkpoint/base_ckpt.pth')
     parent_net.load_state_dict(checkpoint['net'])
 
+    parent_net.eval().to(device)
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for batch_idx, (inputs, targets) in enumerate(testloader):
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = parent_net(inputs)
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+        print(f"parent accuracy = {100. * correct / total}")
+
     deeper_net_cfg = [[1, 16, 1, 1],
-           [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-           [6, 16, 2, 2],
-           [6, 32, 4, 2],
-           [6, 48, 3, 1],
-           [6, 96, 3, 2],  # 2=>3
-           [6, 320, 1, 1]]
+                      [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
+                      [6, 16, 2, 2],
+                      [6, 32, 4, 2],
+                      [6, 48, 3, 1],
+                      [6, 96, 3, 2],  # 2=>3
+                      [6, 320, 1, 1]]
 
     child_net = MobileNetV2(cfg=deeper_net_cfg)
     child_net.load_state_dict(parent_net.state_dict(), strict=False)
