@@ -83,32 +83,28 @@ from collections import OrderedDict
 
 
 def test_net_level():
-    CFG = [
-        (1, 16, 1, 1),
-        (6, 24, 2, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
-        (6, 32, 3, 2),
-        (6, 64, 5, 2),  # 4 => 5
-        (6, 96, 4, 1),  # 3 => 4
-        (6, 192, 3, 2),  # 160 => 192
-        (6, 380, 1, 1)
-    ]  # 320 => 380
+    CFG = [[1, 16, 1, 1],
+           [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
+           [6, 16, 2, 2],
+           [6, 32, 4, 2],
+           [6, 48, 3, 1],
+           [6, 96, 2, 2],
+           [6, 320, 1, 1]]
     parent_net = MobileNetV2(cfg=CFG)
-    checkpoint = torch.load('./checkpoint/ckpt.pth')
-    # parent_net.load_state_dict(checkpoint['net'])
+    checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+    parent_net.load_state_dict(checkpoint['net'])
 
-    deeper_net_cfg = [
-        (1, 16, 1, 1),
-        (6, 24, 2, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
-        (6, 32, 3, 2),
-        (6, 64, 5, 2),
-        (6, 96, 5, 1),  # 4 => 5
-        (6, 192, 3, 2),
-        (6, 380, 1, 1)
-    ]  # 320 => 380
+    deeper_net_cfg = [[1, 16, 1, 1],
+           [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
+           [6, 16, 2, 2],
+           [6, 32, 4, 2],
+           [6, 48, 3, 1],
+           [6, 96, 3, 2],  # 2=>3
+           [6, 320, 1, 1]]
 
     child_net = MobileNetV2(cfg=deeper_net_cfg)
     child_net.load_state_dict(parent_net.state_dict(), strict=False)
-    child_net.layers.out_96_block4.bn3 = process_bn(child_net.layers.out_96_block4.bn3)
+    child_net.layers[5][-1].bn3 = process_bn(child_net.layers[5][-1].bn3)
 
     child_net.eval().to(device)
     correct = 0
@@ -120,7 +116,7 @@ def test_net_level():
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
-        print(f"accuracy = {100. * correct / total}")
+        print(f"deeper accuracy = {100. * correct / total}")
 
 
 def test_block_level():
