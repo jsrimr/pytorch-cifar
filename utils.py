@@ -10,6 +10,7 @@ import time
 from collections import OrderedDict
 
 import math
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -155,11 +156,13 @@ def train(net, criterion, optimizer, trainloader, epoch, device, run):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                     % (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
+        # progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        #              % (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
 
         run["train/loss"].log(loss.item())
         run["train/acc"].log(100. * correct / total)
+    print(f"{epoch}epoch train loss = {loss.item()}")
+    print(f"{epoch}epoch train acc = {100. * correct / total}")
 
 
 def test(net, criterion, testloader, epoch, device, run, exp_name):
@@ -196,9 +199,13 @@ def test(net, criterion, testloader, epoch, device, run, exp_name):
             os.mkdir('checkpoint')
         torch.save(state, f'./checkpoint/{exp_name}_ckpt.pth')
         best_acc = acc
+        print(f"EVAL accuracy = {acc}")
         run["eval/acc"].log(acc)
 
+
 from models.mobilenetv2 import Block
+
+
 def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, stage_idx):
     # 기본적으로 같은 거 복사
     new_state_dict = OrderedDict()
@@ -230,7 +237,8 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
                 child_block2 = list(list(child_net.layers)[stage_idx + 1])[0]
 
         if block_weight_list:  # parent_block1 으로 c_in 한번 변환된거 사용함.
-            tmp_block = Block(child_block1.in_planes, parent_block1.out_planes, parent_block1.expansion, parent_block1.stride)
+            tmp_block = Block(child_block1.in_planes, parent_block1.out_planes, parent_block1.expansion,
+                              parent_block1.stride)
             tmp_block.load_state_dict(block_weight_list[-1], strict=False)
 
             new_weight1, new_weight2 = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage)
@@ -250,16 +258,6 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
 
 
 
-PLAN = [
-    ("width", 2),
-    ("depth", 2),
-    ("width", 3),
-    ("depth", 3),
-    ("width", 4),
-    ("depth", 4),
-    ("width", 5),
-    ("depth", 5),
-]
 
 # train from net_transform
 BASE_CFG = [[1, 16, 1, 1],
@@ -270,33 +268,51 @@ BASE_CFG = [[1, 16, 1, 1],
             [6, 96, 2, 2],
             [6, 320, 1, 1]]
 
+TARGET_CFG = [
+    (1, 16, 1, 1),
+    (6, 24, 2, 1),
+    (6, 32, 3, 2),  # 16->32 , 2->3
+    (6, 48, 5, 2),  # 32->64 , 4->5
+    (6, 96, 4, 1),  # 48->96 , 3->4
+    (6, 192, 3, 2),  # 96->192, 2->3
+    (6, 380, 1, 1)]
 
-def get_next_net(current_net, epoch):
-    target, stage = PLAN[epoch]
+
+def get_next_net(current_net, plan, plan_idx):
+    target, stage_idx = plan[plan_idx]
     if target == "width":
         new_cfg = copy.deepcopy(BASE_CFG)
-        new_cfg[stage][1] * 2
-        next_net = MobileNetV2(new_cfg)
+        new_cfg[stage_idx][1] * 2
+        next_net = MobileNetV2(cfg=new_cfg)
 
-        net_transform_wider_update(current_net, next_net, )
+        net_transform_wider_update(current_net, next_net, stage_idx)
 
     elif target == "depth":
-        next_net = None
+        new_cfg = copy.deepcopy(BASE_CFG)
+        new_cfg[stage_idx][2] += 1
+        next_net = MobileNetV2(cfg=new_cfg)
 
-    return
+        next_net.load_state_dict(current_net.state_dict(), strict=False)
+        next_net.layers[stage_idx][-1].bn3 = process_bn(next_net.layers[stage_idx][-1].bn3)
+
+
+    return next_net
+
 
 from box import Box
 
+
 class BlockWeight:
     pass
+
     def __init__(self, state_dict: OrderedDict):
-        self.conv1 = Box({k[6:]:v for k,v in state_dict.items() if k.startswith("conv1")})
-        self.bn1 = Box({k[4:]:v for k,v in state_dict.items() if k.startswith("bn1")})
-        self.conv2 = Box({k[6:]:v for k,v in state_dict.items() if k.startswith("conv2")})
-        self.bn2 = Box({k[4:]:v for k,v in state_dict.items() if k.startswith("bn2")})
-        self.conv3 = Box({k[6:]:v for k,v in state_dict.items() if k.startswith("conv3")})
-        self.bn3 = Box({k[4:]:v for k,v in state_dict.items() if k.startswith("bn3")})
-        self.shortcut = Box({k[9:]:v for k,v in state_dict.items() if k.startswith("shortcut")})
+        self.conv1 = Box({k[6:]: v for k, v in state_dict.items() if k.startswith("conv1")})
+        self.bn1 = Box({k[4:]: v for k, v in state_dict.items() if k.startswith("bn1")})
+        self.conv2 = Box({k[6:]: v for k, v in state_dict.items() if k.startswith("conv2")})
+        self.bn2 = Box({k[4:]: v for k, v in state_dict.items() if k.startswith("bn2")})
+        self.conv3 = Box({k[6:]: v for k, v in state_dict.items() if k.startswith("conv3")})
+        self.bn3 = Box({k[4:]: v for k, v in state_dict.items() if k.startswith("bn3")})
+        self.shortcut = Box({k[9:]: v for k, v in state_dict.items() if k.startswith("shortcut")})
 
 
 def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
@@ -412,11 +428,12 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
         # wider_block2.load_state_dict(new_state_dict2)
         return [new_state_dict1, new_state_dict2]
 
+
 def process_bn_weight(parent_bn_w, child_bn_w):
     idx = torch.arange(child_bn_w.weight.shape[0] - parent_bn_w.weight.shape[0])
     bn_w = torch.stack([parent_bn_w.weight, parent_bn_w.bias,
-                     parent_bn_w.running_mean,
-                     parent_bn_w.running_var], axis=1)
+                        parent_bn_w.running_mean,
+                        parent_bn_w.running_var], axis=1)
     bn_wider = torch.cat((bn_w, bn_w[idx, :]), axis=0)
     return bn_wider
 
@@ -438,3 +455,33 @@ def get_wider_weight(parent_w, child_w, axis):
         larger_weight[:, idx, :, :] = new_weight
 
     return larger_weight
+
+
+def bn_identity(bn_origin):
+    bn = deepcopy(bn_origin)
+    bn.weight.data = torch.sqrt(bn_origin.running_var + bn_origin.eps)
+    bn.bias.data = bn_origin.running_mean  # torch.zeros_like(bn.bias.data) #bn_origin.running_mean
+
+    return bn
+
+
+def process_bn(bn_origin):
+    bn = deepcopy(bn_origin)
+    bn.weight.data = torch.zeros_like(bn.weight)
+    bn.bias.data = torch.zeros_like(bn.bias)
+
+    return bn
+
+
+def get_conv_identity_layer(conv_layer):
+    w = conv_layer.weight.data
+    mid = w.shape[-1] // 2
+
+    # todo : add noise
+    for out in range(w.shape[0]):  # 모든 커널 돌며
+        idx = out % w.shape[1]
+        tmp = torch.zeros_like(w[out])
+        tmp[idx, mid, mid] = 1.
+        w[out] = tmp
+
+    return w

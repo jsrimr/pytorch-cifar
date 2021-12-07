@@ -1,22 +1,9 @@
 '''Train CIFAR10 with PyTorch.'''
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-import torch.backends.cudnn as cudnn
 
 import torchvision
 import torchvision.transforms as transforms
 
-import os
-import argparse
-
 from models import *
-from utils import progress_bar
-
-import numpy as np
-from copy import deepcopy
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -47,50 +34,14 @@ testloader = torch.utils.data.DataLoader(
 classes = ('plane', 'car', 'bird', 'cat', 'deer',
            'dog', 'frog', 'horse', 'ship', 'truck')
 
-def bn_identity(bn_origin):
-    bn = deepcopy(bn_origin)
-    bn.weight.data = torch.sqrt(bn_origin.running_var + bn_origin.eps)
-    bn.bias.data = bn_origin.running_mean  # torch.zeros_like(bn.bias.data) #bn_origin.running_mean
-
-    return bn
-
-
-def process_bn(bn_origin):
-    bn = deepcopy(bn_origin)
-    bn.weight.data = torch.zeros_like(bn.weight)
-    bn.bias.data = torch.zeros_like(bn.bias)
-
-    return bn
-
-
-def get_conv_identity_layer(conv_layer):
-    w = conv_layer.weight.data
-    mid = w.shape[-1] // 2
-
-    # todo : add noise
-    for out in range(w.shape[0]):  # 모든 커널 돌며
-        idx = out % w.shape[1]
-        tmp = torch.zeros_like(w[out])
-        tmp[idx, mid, mid] = 1.
-        w[out] = tmp
-
-    return w
-
-
 from models.mobilenetv2 import Block, MobileNetV2
 
-from collections import OrderedDict
+from utils import BASE_CFG, process_bn
 
 
 def test_net_level():
-    CFG = [[1, 16, 1, 1],
-           [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-           [6, 16, 2, 2],
-           [6, 32, 4, 2],
-           [6, 48, 3, 1],
-           [6, 96, 2, 2],
-           [6, 320, 1, 1]]
-    parent_net = MobileNetV2(cfg=CFG)
+
+    parent_net = MobileNetV2(cfg=BASE_CFG)
     checkpoint = torch.load('./checkpoint/base_ckpt.pth')
     parent_net.load_state_dict(checkpoint['net'])
 

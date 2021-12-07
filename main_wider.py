@@ -47,7 +47,7 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer',
 
 from models.mobilenetv2 import Block
 
-from utils import net_transform_wider_update, BlockWeight
+from utils import BASE_CFG, net_transform_wider_update, BlockWeight
 
 
 def check_weight_sync(weight_name, parent_dict, child_dict, axis):
@@ -64,14 +64,8 @@ def check_weight_sync(weight_name, parent_dict, child_dict, axis):
 def test_net_level():
     # Model
     print('==> Building model..')
-    CFG = [[1, 16, 1, 1],
-           [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-           [6, 16, 2, 2],
-           [6, 32, 4, 2],
-           [6, 48, 3, 1],
-           [6, 96, 2, 2],
-           [6, 320, 1, 1]]
-    parent_net = MobileNetV2(cfg=CFG)
+
+    parent_net = MobileNetV2(cfg=BASE_CFG)
     checkpoint = torch.load('./checkpoint/base_ckpt.pth')
     parent_net.load_state_dict(checkpoint['net'])
     # net = net.to(device)
