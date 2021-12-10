@@ -48,6 +48,38 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer',
 
 from utils import get_next_net, train, test, BASE_CFG
 
+
+def get_warmed_new_optimizer(optimizer, net):
+    opt_state_dict = optimizer.state_dict()
+
+    new_optimizer = optim.SGD(net.parameters(), lr=args.lr,
+                              momentum=0.9, weight_decay=5e-4)
+    new_opt_state_dict = new_optimizer.state_dict()
+
+    new_opt_state_dict['state'] = opt_state_dict['state']
+    new_opt_state_dict['param_groups'][0]['lr'] = opt_state_dict['param_groups'][0]['lr']
+    new_opt_state_dict['param_groups'][0]['momentum'] = opt_state_dict['param_groups'][0]['momentum']
+    new_opt_state_dict['param_groups'][0]['dampening'] = opt_state_dict['param_groups'][0]['dampening']
+    new_opt_state_dict['param_groups'][0]['weight_decay'] = opt_state_dict['param_groups'][0]['weight_decay']
+    new_opt_state_dict['param_groups'][0]['nesterov'] = opt_state_dict['param_groups'][0]['nesterov']
+    new_opt_state_dict['param_groups'][0]['initial_lr'] = opt_state_dict['param_groups'][0]['initial_lr']
+
+    new_optimizer.load_state_dict(new_opt_state_dict)
+
+    return new_optimizer
+
+
+def get_warmed_new_scheduler(scheduler, optimizer):
+    sched_state_dict = scheduler.state_dict()
+
+    new_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+    new_sched_state_dict = new_scheduler.state_dict()
+    new_sched_state_dict.update(sched_state_dict)
+    new_scheduler.load_state_dict(new_sched_state_dict)
+
+    return new_scheduler
+
+
 if __name__ == '__main__':
 
     PLAN = [
@@ -84,27 +116,37 @@ if __name__ == '__main__':
                           momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
-    checkpoint = torch.load('./checkpoint/base_ckpt.pth')
-    # net.load_state_dict(checkpoint['net'])
-    # print("loaded the model")
+    # checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+    checkpoint = torch.load('./checkpoint/tmp.pth')
+    net.load_state_dict(checkpoint['net'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    scheduler.load_state_dict(checkpoint['scheduler'])
+    print("loaded the model")
 
     plan_idx = None
+
+    # =====
+    plan_idx = 1
+    net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
+    print("=" * 20 + "\n", f"net changed! {PLAN[plan_idx]}\n", "=" * 20)
+
+    optimizer = get_warmed_new_optimizer(optimizer, net)
+    scheduler = get_warmed_new_scheduler(scheduler, optimizer)
+
+    net = net.to(device)
+    # ======
+
     interval = total_epoch // (len(PLAN) + 1)
     for epoch in range(start_epoch, total_epoch):
-        if epoch != 0 and epoch % interval == 0:
-            plan_idx = epoch // interval - 1 if (epoch // interval - 1) < len(PLAN) else plan_idx
-            net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
-            net = net.to(device)
-            optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                                  momentum=0.9, weight_decay=5e-4)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-
-            print("=" * 100 + "\n", f"net changed! {PLAN[plan_idx]}" + "\n", "=" * 100)
+        # if epoch != 0 and epoch % interval == 0:
+        # plan_idx = epoch // interval - 1 if (epoch // interval - 1) < len(PLAN) else plan_idx
 
         train(net, criterion, optimizer, trainloader, epoch, device, run)
 
         # exp_name = '_'.join(map(str, PLAN[plan_idx])) if (plan_idx is not None) else "base"
-        # test(net, criterion, testloader, epoch, device, run, exp_name)
-        # scheduler.step()
+        # test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, "tmp")
+
+        run['train/lr'].log(scheduler.get_last_lr())
+        scheduler.step()
 
     run.stop()

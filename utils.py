@@ -19,6 +19,8 @@ import torch.nn.init as init
 
 from models import MobileNetV2
 
+SMALL_NOISE = 1e-3
+
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
@@ -165,7 +167,7 @@ def train(net, criterion, optimizer, trainloader, epoch, device, run):
     print(f"{epoch}epoch train acc = {100. * correct / total}")
 
 
-def test(net, criterion, testloader, epoch, device, run, exp_name):
+def test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, exp_name):
     # global best_acc
     net.eval()
     best_acc = 0
@@ -194,6 +196,8 @@ def test(net, criterion, testloader, epoch, device, run, exp_name):
             'net': net.state_dict(),
             'acc': acc,
             'epoch': epoch,
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict()
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
@@ -255,8 +259,6 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
             pass
     # 다음 스테이지의 첫번째 블록 conv1 레이어 업데이트
     child_block2.load_state_dict(block_weight_list[-1])
-
-
 
 
 # train from net_transform
@@ -433,7 +435,7 @@ def process_bn_weight(parent_bn_w, child_bn_w):
     bn_w = torch.stack([parent_bn_w.weight, parent_bn_w.bias,
                         parent_bn_w.running_mean,
                         parent_bn_w.running_var], axis=1)
-    bn_wider = torch.cat((bn_w, bn_w[idx, :]), axis=0)
+    bn_wider = torch.cat((bn_w, bn_w[idx, :] * SMALL_NOISE), axis=0)
     return bn_wider
 
 
@@ -446,10 +448,10 @@ def get_wider_weight(parent_w, child_w, axis):
     """
     idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
     if axis == 0:
-        new_weight = parent_w[idx, :, :, :]
+        new_weight = parent_w[idx, :, :, :] * SMALL_NOISE
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
     else:
-        new_weight = parent_w[:, idx, :, :] / 2
+        new_weight = parent_w[:, idx, :, :] / 2 * SMALL_NOISE
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
         larger_weight[:, idx, :, :] = new_weight
 

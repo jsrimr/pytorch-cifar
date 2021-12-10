@@ -16,7 +16,6 @@ import neptune.new as neptune
 from models import *
 from utils import progress_bar
 
-
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true',
@@ -127,6 +126,7 @@ def train(epoch):
     print(f"{epoch}epoch train loss = {loss.item()}")
     print(f"{epoch}epoch train acc = {100. * correct / total}")
 
+
 def test(epoch):
     global best_acc
     net.eval()
@@ -148,7 +148,7 @@ def test(epoch):
             #              % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
     # Save checkpoint.
-    acc = 100.*correct/total
+    acc = 100. * correct / total
     if acc > best_acc:
         print('Saving..')
         state = {
@@ -170,7 +170,7 @@ if __name__ == '__main__':
         api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI0MDQyMjIyZC1mYWQ0LTQ3OWYtYmY1Ny0yMmZlNzA0ODg5NzkifQ==",
     )  # your credentials
 
-    for epoch in range(start_epoch, start_epoch+200):
+    for epoch in range(start_epoch, start_epoch + 200):
         train(epoch)
         test(epoch)
         scheduler.step()
