@@ -61,22 +61,15 @@ def check_weight_sync(weight_name, parent_dict, child_dict, axis):
         assert torch.allclose(parent_w, child_w[:, :subset, :, :])
 
 
-def test_net_level():
+def test_net_level(parent_cfg, child_cfg, parent_ckpt):
     # Model
     print('==> Building model..')
 
-    parent_net = MobileNetV2(cfg=BASE_CFG)
-    checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+    parent_net = MobileNetV2(cfg=parent_cfg)
+    checkpoint = torch.load(parent_ckpt)
     parent_net.load_state_dict(checkpoint['net'])
     # net = net.to(device)
 
-    child_cfg = [[1, 16, 1, 1],
-                 [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-                 [6, 16, 2, 2],
-                 [6, 32, 4, 2],
-                 [6, 64, 3, 1],  # 48->64
-                 [6, 96, 2, 2],
-                 [6, 320, 1, 1]]
     child_net = MobileNetV2(cfg=child_cfg)
     net_transform_wider_update(parent_net, child_net, 4)
 
@@ -187,4 +180,29 @@ def test_layer_level():
 if __name__ == '__main__':
     # test_layer_level()
     # test_block_level()
-    test_net_level()
+
+    parent_ckpt = './checkpoint/base_ckpt.pth'
+    `
+
+    # parent_cfg = BASE_CFG
+    parent_cfg = [[1, 16, 1, 1],
+                  [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
+                  [6, 32, 3, 2],
+                  [6, 64, 4, 2],
+                  [6, 64, 3, 1],  # 48->64
+                  [6, 96, 2, 2],
+                  [6, 320, 1, 1]]
+
+    child_cfg = [[1, 16, 1, 1],
+                 [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
+                 [6, 16, 2, 2],
+                 [6, 32, 4, 2],
+                 [6, 64, 3, 1],  # 48->64
+                 [6, 96, 2, 2],
+                 [6, 320, 1, 1]]
+
+    test_net_level(parent_cfg, child_cfg, parent_ckpt)
+
+    # load parent
+
+    # resume train

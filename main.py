@@ -57,26 +57,37 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer',
 # Model
 print('==> Building model..')
 
-CFG = [(1, 8, 1, 1),
-       (6, 12, 1, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
-       (6, 16, 1, 2),
-       (6, 32, 2, 2),
-       (6, 48, 2, 1),
-       (6, 80, 2, 2),
-       (6, 320, 1, 1)]
+# CFG = [(1, 8, 1, 1),
+#        (6, 12, 1, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
+#        (6, 16, 1, 2),
+#        (6, 32, 2, 2),
+#        (6, 48, 2, 1),
+#        (6, 80, 2, 2),
+#        (6, 320, 1, 1)]
+#
+# EXP_NAME = "base_small"
+CFG = [
+    (1, 16, 1, 1),
+    (6, 24, 2, 1),
+    (6, 32, 3, 2),  # 16->32 , 2->3
+    (6, 64, 4, 2),  # 32->64 , 3->4
+    (6, 96, 3, 1),  # 48->96 , 2->3
+    (6, 160, 3, 2),  # 96->160, 2->3
+    (6, 380, 1, 1)]
+EXP_NAME = "depth_5_ckpt"
 
 net = MobileNetV2(cfg=CFG)
 
 net = net.to(device)
-if device == 'cuda':
-    net = torch.nn.DataParallel(net)
-    cudnn.benchmark = True
+# if device == 'cuda':
+#     net = torch.nn.DataParallel(net)
+#     cudnn.benchmark = True
 
 if args.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
-    assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+    assert os.path.isdir('origin_checkpoint'), 'Error: no checkpoint directory found!'
+    checkpoint = torch.load(f'./checkpoint/{EXP_NAME}.pth')
     net.load_state_dict(checkpoint['net'])
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
@@ -108,12 +119,13 @@ def train(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                     % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+        # progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+        #              % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
         run["train/loss"].log(loss.item())
         run["train/acc"].log(100. * correct / total)
-
+    print(f"{epoch}epoch train loss = {loss.item()}")
+    print(f"{epoch}epoch train acc = {100. * correct / total}")
 
 def test(epoch):
     global best_acc
@@ -132,8 +144,8 @@ def test(epoch):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                         % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+            # progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            #              % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
     # Save checkpoint.
     acc = 100.*correct/total
@@ -144,10 +156,11 @@ def test(epoch):
             'acc': acc,
             'epoch': epoch,
         }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/base_ckpt.pth')
+        if not os.path.isdir('origin_checkpoint'):
+            os.mkdir('origin_checkpoint')
+        torch.save(state, f'./origin_checkpoint/{EXP_NAME}.pth')
         best_acc = acc
+        print(f"EVAL accuracy = {acc}")
         run["eval/acc"].log(acc)
 
 

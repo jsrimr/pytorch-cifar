@@ -26,9 +26,9 @@ neptune 에 기록
 
 # todo 
 [] noise
+[] learning_rate schedule 를 차별 적용
 
-plan 에 따라 net 키우기
-10epoch 씩 훈련
+plan 에 따라 net 키우기 10epoch 씩 훈련
 
 
 의문

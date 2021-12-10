@@ -263,8 +263,8 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
 BASE_CFG = [[1, 16, 1, 1],
             [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
             [6, 16, 2, 2],
-            [6, 32, 4, 2],
-            [6, 48, 3, 1],
+            [6, 32, 3, 2],
+            [6, 48, 2, 1],
             [6, 96, 2, 2],
             [6, 320, 1, 1]]
 
@@ -272,31 +272,30 @@ TARGET_CFG = [
     (1, 16, 1, 1),
     (6, 24, 2, 1),
     (6, 32, 3, 2),  # 16->32 , 2->3
-    (6, 48, 5, 2),  # 32->64 , 4->5
-    (6, 96, 4, 1),  # 48->96 , 3->4
-    (6, 192, 3, 2),  # 96->192, 2->3
+    (6, 64, 4, 2),  # 32->64 , 3->4
+    (6, 96, 3, 1),  # 48->96 , 2->3
+    (6, 160, 3, 2),  # 96->160, 2->3
     (6, 380, 1, 1)]
 
 
-def get_next_net(current_net, plan, plan_idx):
+def get_next_net(current_net, current_cfg, plan, plan_idx):
     target, stage_idx = plan[plan_idx]
     if target == "width":
-        new_cfg = copy.deepcopy(BASE_CFG)
-        new_cfg[stage_idx][1] * 2
+        new_cfg = copy.deepcopy(current_cfg)
+        new_cfg[stage_idx][1] = TARGET_CFG[stage_idx][1]
         next_net = MobileNetV2(cfg=new_cfg)
 
         net_transform_wider_update(current_net, next_net, stage_idx)
 
     elif target == "depth":
-        new_cfg = copy.deepcopy(BASE_CFG)
-        new_cfg[stage_idx][2] += 1
+        new_cfg = copy.deepcopy(current_cfg)
+        new_cfg[stage_idx][2] = TARGET_CFG[stage_idx][2]
         next_net = MobileNetV2(cfg=new_cfg)
 
         next_net.load_state_dict(current_net.state_dict(), strict=False)
         next_net.layers[stage_idx][-1].bn3 = process_bn(next_net.layers[stage_idx][-1].bn3)
 
-
-    return next_net
+    return next_net, new_cfg
 
 
 from box import Box

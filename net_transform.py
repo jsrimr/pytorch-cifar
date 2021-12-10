@@ -16,7 +16,7 @@ from models.mobilenetv2 import MobileNetV2
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 best_acc = 0  # best test accuracy
-start_epoch = 1  # start from epoch 0 or last checkpoint epoch
+start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 total_epoch = 201
 
 # Data
@@ -77,28 +77,24 @@ if __name__ == '__main__':
     #
     #     # net = MobileNetV2(cfg=CFG).to(device)
 
-    net = MobileNetV2(cfg=BASE_CFG).to(device)
+    current_cfg = BASE_CFG
+    net = MobileNetV2(cfg=current_cfg).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=args.lr,
                           momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
-    if args.resume:
-        # Load checkpoint.
-        print('==> Resuming from checkpoint..')
-        assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load('./checkpoint/b_a_s_e_ckpt.pth')
-        net.load_state_dict(checkpoint['net'])
-        best_acc = checkpoint['acc']
-        start_epoch = checkpoint['epoch']
-        print("loaded the model")
+    checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+    # net.load_state_dict(checkpoint['net'])
+    # print("loaded the model")
 
     plan_idx = None
-    interval = total_epoch // len(PLAN)
+    interval = total_epoch // (len(PLAN) + 1)
     for epoch in range(start_epoch, total_epoch):
-        if epoch % interval == 0:
-            plan_idx = epoch // interval - 1
-            net = get_next_net(net, PLAN, plan_idx).to(device)
+        if epoch != 0 and epoch % interval == 0:
+            plan_idx = epoch // interval - 1 if (epoch // interval - 1) < len(PLAN) else plan_idx
+            net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
+            net = net.to(device)
             optimizer = optim.SGD(net.parameters(), lr=args.lr,
                                   momentum=0.9, weight_decay=5e-4)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
@@ -107,8 +103,8 @@ if __name__ == '__main__':
 
         train(net, criterion, optimizer, trainloader, epoch, device, run)
 
-        exp_name = '_'.join(map(str, PLAN[plan_idx])) if plan_idx else "base"
-        test(net, criterion, testloader, epoch, device, run, exp_name)
-        scheduler.step()
+        # exp_name = '_'.join(map(str, PLAN[plan_idx])) if (plan_idx is not None) else "base"
+        # test(net, criterion, testloader, epoch, device, run, exp_name)
+        # scheduler.step()
 
     run.stop()
