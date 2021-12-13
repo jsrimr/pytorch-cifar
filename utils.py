@@ -167,8 +167,9 @@ def train(net, criterion, optimizer, trainloader, epoch, device, run):
     print(f"{epoch}epoch train acc = {100. * correct / total}")
 
 
+best_acc = 0.
 def test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, exp_name):
-    # global best_acc
+    global best_acc
     net.eval()
     best_acc = 0
     test_loss = 0
@@ -190,6 +191,9 @@ def test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, e
 
     # Save checkpoint.
     acc = 100. * correct / total
+    print(f"EVAL accuracy = {acc}")
+    run["eval/acc"].log(acc)
+
     if acc > best_acc:
         print('Saving..')
         state = {
@@ -203,8 +207,6 @@ def test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, e
             os.mkdir('checkpoint')
         torch.save(state, f'./checkpoint/{exp_name}_ckpt.pth')
         best_acc = acc
-        print(f"EVAL accuracy = {acc}")
-        run["eval/acc"].log(acc)
 
 
 from models.mobilenetv2 import Block
