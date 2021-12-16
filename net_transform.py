@@ -116,7 +116,7 @@ if __name__ == '__main__':
                           momentum=0.9, weight_decay=5e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
 
-    checkpoint = torch.load('./checkpoint/base_ckpt.pth')
+    # checkpoint = torch.load('./checkpoint/base_ckpt.pth')
     checkpoint = torch.load('./checkpoint/tmp_ckpt.pth')
     net.load_state_dict(checkpoint['net'])
     optimizer.load_state_dict(checkpoint['optimizer'])
@@ -125,29 +125,36 @@ if __name__ == '__main__':
 
     plan_idx = None
 
-    # =====
-    plan_idx = 1
-    net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
-    print("=" * 20 + "\n", f"net changed! {PLAN[plan_idx]}\n", "=" * 20)
-
-    net = net.to(device)  # NOTE : net should be on the right device before loading optimizer, scheduler
-    # optimizer = get_warmed_new_optimizer(optimizer, net)
-    optimizer = optim.SGD(net.parameters(), lr=optimizer.param_groups[0]['lr'],
-                          momentum=0.9, weight_decay=5e-4)
-
-    scheduler = get_warmed_new_scheduler(scheduler, optimizer)
-
-    # ======
-
     interval = total_epoch // (len(PLAN) + 1)
     for epoch in range(start_epoch, total_epoch):
-        # if epoch != 0 and epoch % interval == 0:
-        # plan_idx = epoch // interval - 1 if (epoch // interval - 1) < len(PLAN) else plan_idx
+        if epoch != 0 and epoch % interval == 0:
+            plan_idx = epoch // interval - 1 if (epoch // interval - 1) < len(PLAN) else plan_idx
+            target, stage = PLAN[plan_idx]
+            net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
+            print("=" * 20 + "\n", f"net changed! {PLAN[plan_idx]}\n", "=" * 20)
+            net = net.to(device)  # NOTE : net should be on the right device before loading optimizer, scheduler
+
+            # if target == "depth":
+            #
+            #     params = [v for (k,v) in net.named_parameters() if not k.startswith(f"layers.{stage}.stage_{stage}")]
+            #     added_block_params = [v for (k,v) in net.named_parameters() if k.startswith(f"layers.{stage}.stage_{stage}")]
+            #     optimizer = optim.SGD(
+            #                 [
+            #                     {"params": added_block_params, "lr": args.lr},
+            #                     {"params": params, "lr": optimizer.param_groups[0]['lr']},
+            #                 ],
+            #                 momentum=0.9, weight_decay=5e-4
+            #                 )
+            # else:
+            optimizer = optim.SGD(net.parameters(), lr=optimizer.param_groups[0]['lr'],
+                                  momentum=0.9, weight_decay=5e-4)
+
+            scheduler = get_warmed_new_scheduler(scheduler, optimizer)
 
         train(net, criterion, optimizer, trainloader, epoch, device, run)
 
         exp_name = '_'.join(map(str, PLAN[plan_idx])) if (plan_idx is not None) else "base"
-        test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, "depth")
+        test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, exp_name)
 
         run['train/lr'].log(scheduler.get_last_lr())
         scheduler.step()

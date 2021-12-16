@@ -61,7 +61,7 @@ print('==> Building model..')
 from utils import train, test, BASE_CFG, TARGET_CFG
 
 if __name__ == '__main__':
-    EXP_NAME = "depth_5"
+    EXP_NAME = "BASE"
 
     run = neptune.init(
         project="caplab/net-transform-train-setting",
