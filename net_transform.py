@@ -49,32 +49,18 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer',
 from utils import get_next_net, train, test, BASE_CFG
 
 
-def get_warmed_new_optimizer(optimizer, net):
-    opt_state_dict = optimizer.state_dict()
-
-    new_optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                              momentum=0.9, weight_decay=5e-4)
-    new_opt_state_dict = new_optimizer.state_dict()
-
-    new_opt_state_dict['state'] = opt_state_dict['state']
-    new_opt_state_dict['param_groups'][0]['lr'] = opt_state_dict['param_groups'][0]['lr']
-    new_opt_state_dict['param_groups'][0]['momentum'] = opt_state_dict['param_groups'][0]['momentum']
-    new_opt_state_dict['param_groups'][0]['dampening'] = opt_state_dict['param_groups'][0]['dampening']
-    new_opt_state_dict['param_groups'][0]['weight_decay'] = opt_state_dict['param_groups'][0]['weight_decay']
-    new_opt_state_dict['param_groups'][0]['nesterov'] = opt_state_dict['param_groups'][0]['nesterov']
-    new_opt_state_dict['param_groups'][0]['initial_lr'] = opt_state_dict['param_groups'][0]['initial_lr']
-
-    new_optimizer.load_state_dict(new_opt_state_dict)
-
-    return new_optimizer
+def make_scheduler(optimizer):
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+    return scheduler
 
 
 def get_warmed_new_scheduler(scheduler, optimizer):
     sched_state_dict = scheduler.state_dict()
 
-    new_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-    new_sched_state_dict = new_scheduler.state_dict()
-    new_sched_state_dict.update(sched_state_dict)
+    new_scheduler = make_scheduler(optimizer)
+    new_sched_state_dict = {"last_epoch": sched_state_dict['last_epoch'],
+                            "_step_count": sched_state_dict['_step_count'],
+                            "_last_lr": sched_state_dict['_last_lr']}
     new_scheduler.load_state_dict(new_sched_state_dict)
 
     return new_scheduler
@@ -114,13 +100,17 @@ if __name__ == '__main__':
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=args.lr,
                           momentum=0.9, weight_decay=5e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-
-    # checkpoint = torch.load('./checkpoint/base_ckpt.pth')
     checkpoint = torch.load('./checkpoint/tmp_ckpt.pth')
     net.load_state_dict(checkpoint['net'])
+
+    scheduler = make_scheduler(optimizer)
     optimizer.load_state_dict(checkpoint['optimizer'])
-    scheduler.load_state_dict(checkpoint['scheduler'])
+    # NOTE : 처음에는 직접 load_state_dict 해줘야함. get_warmed_scheduler(scheduler) 에서 scheduler 는 준비된 scheduler 를 요구하기 때문
+    new_sched_state_dict = {"last_epoch": checkpoint['scheduler']['last_epoch'],
+                            "_step_count": checkpoint['scheduler']['_step_count'],
+                            "_last_lr": checkpoint['scheduler']['_last_lr']}
+    scheduler.load_state_dict(new_sched_state_dict)
+
     print("loaded the model")
 
     plan_idx = None
@@ -134,18 +124,6 @@ if __name__ == '__main__':
             print("=" * 20 + "\n", f"net changed! {PLAN[plan_idx]}\n", "=" * 20)
             net = net.to(device)  # NOTE : net should be on the right device before loading optimizer, scheduler
 
-            # if target == "depth":
-            #
-            #     params = [v for (k,v) in net.named_parameters() if not k.startswith(f"layers.{stage}.stage_{stage}")]
-            #     added_block_params = [v for (k,v) in net.named_parameters() if k.startswith(f"layers.{stage}.stage_{stage}")]
-            #     optimizer = optim.SGD(
-            #                 [
-            #                     {"params": added_block_params, "lr": args.lr},
-            #                     {"params": params, "lr": optimizer.param_groups[0]['lr']},
-            #                 ],
-            #                 momentum=0.9, weight_decay=5e-4
-            #                 )
-            # else:
             optimizer = optim.SGD(net.parameters(), lr=optimizer.param_groups[0]['lr'],
                                   momentum=0.9, weight_decay=5e-4)
 
