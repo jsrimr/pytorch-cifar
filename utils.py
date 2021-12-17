@@ -19,7 +19,7 @@ import torch.nn.init as init
 
 from models import MobileNetV2
 
-SMALL_NOISE = 1e-3
+SMALL_NOISE = 1e-3 + 1
 
 
 def get_mean_and_std(dataset):
