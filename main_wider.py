@@ -130,7 +130,7 @@ def test_block_level():
     res2 = wider_block2(res2)
 
     # assert torch.allclose(res1, res2, rtol=1e-03, atol=1e-04)
-    print(f"After : res1==res2 : {torch.allclose(res1, res2[:,:res1.shape[1], :, :], rtol=1e-03, atol=1e-04)}")
+    print(f"After : res1==res2 : {torch.allclose(res1, res2[:, :res1.shape[1], :, :], rtol=1e-05, atol=1e-05)}")
 
 
 def test_layer_level():
@@ -148,21 +148,21 @@ def test_layer_level():
     c_bn2 = nn.BatchNorm2d(1)
     res2 = c_bn2(c_conv_2(c_bn1(c_conv(x))))
 
-    print(f"res1==res2 : {torch.allclose(res1, res2)}")
+    print(f"res1==res2 : {torch.allclose(res1, res2, rtol=1e-03, atol=1e-04)}")
 
-    conv_block1_wider = get_wider_weight(p_conv.weight.detach().numpy(), c_conv.weight.detach().numpy(), axis=0)
-    wider_bn1 = process_bn_weight(p_bn1, c_bn1)
-    conv_block2_wider = get_wider_weight(p_conv_2.weight.detach().numpy(), c_conv_2.weight.detach().numpy(),
-                                         axis=1)
+    idx, conv_block1_wider = get_wider_weight(p_conv.weight, c_conv.weight, axis=0, idx=None)
+    wider_bn1 = process_bn_weight(p_bn1, idx)
+    _, conv_block2_wider = get_wider_weight(p_conv_2.weight, c_conv_2.weight,
+                                            axis=1, idx=idx)
     wider_bn2 = process_bn_weight(p_bn2, c_bn2)
 
-    c_conv.weight.data = torch.from_numpy(conv_block1_wider)
-    c_conv_2.weight.data = torch.from_numpy(conv_block2_wider)
+    c_conv.weight.data = conv_block1_wider
+    c_conv_2.weight.data = conv_block2_wider
 
-    c_bn1.weight.data = torch.from_numpy(wider_bn1[:, 0])
-    c_bn1.bias.data = torch.from_numpy(wider_bn1[:, 1])
-    c_bn1.running_mean.data = torch.from_numpy(wider_bn1[:, 2])
-    c_bn1.running_var.data = torch.from_numpy(wider_bn1[:, 3])
+    c_bn1.weight.data = wider_bn1[:, 0]
+    c_bn1.bias.data = wider_bn1[:, 1]
+    c_bn1.running_mean.data = wider_bn1[:, 2]
+    c_bn1.running_var.data = wider_bn1[:, 3]
     c_bn1.num_batches_tracked.data = p_bn1.num_batches_tracked
 
     c_bn2.weight.data = torch.from_numpy(wider_bn2[:, 0])
@@ -174,33 +174,22 @@ def test_layer_level():
     res1 = p_bn2(p_conv_2(p_bn1(p_conv(x))))
     res2 = c_bn2(c_conv_2(c_bn1(c_conv(x))))
 
-    assert torch.allclose(res1, res2)
+    print(f"res1==res2 : {torch.allclose(res1, res2, rtol=1e-03, atol=1e-04)}")
 
+
+import torch.optim as optim
+from utils import train, test
+import neptune.new as neptune
+import copy
 
 if __name__ == '__main__':
     # test_layer_level()
     # test_block_level()
 
     parent_ckpt = './checkpoint/base_ckpt.pth'
-    # parent_cfg = BASE_CFG
-    parent_cfg = [[1, 16, 1, 1],
-                  [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-                  [6, 32, 3, 2],
-                  [6, 64, 4, 2],
-                  [6, 64, 3, 1],  # 48->64
-                  [6, 96, 2, 2],
-                  [6, 320, 1, 1]]
+    parent_cfg = BASE_CFG
 
-    child_cfg = [[1, 16, 1, 1],
-                 [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-                 [6, 16, 2, 2],
-                 [6, 32, 4, 2],
-                 [6, 64, 3, 1],  # 48->64
-                 [6, 96, 2, 2],
-                 [6, 320, 1, 1]]
+    child_cfg = copy.deepcopy(parent_cfg)
+    child_cfg[2] = [6, 32, 2, 2]
 
     test_net_level(parent_cfg, child_cfg, parent_ckpt)
-
-    # load parent
-
-    # resume train
