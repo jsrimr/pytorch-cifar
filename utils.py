@@ -19,7 +19,9 @@ import torch.nn.init as init
 
 from models import MobileNetV2
 
-SMALL_NOISE = 1e-3 + 1
+N = 3
+NOISE_RATIO = 1e-3
+SMALL_NOISE = NOISE_RATIO + 1
 
 
 def get_mean_and_std(dataset):
@@ -443,7 +445,10 @@ def process_bn_weight(parent_bn_w, idx):
     return bn_wider
 
 
-N = 3
+def apply_noise(weights):
+    std = torch.std(weights)
+    weights += torch.randn_like(weights) * std * NOISE_RATIO
+    return weights
 
 
 def get_wider_weight(parent_w, child_w, axis, idx):
@@ -461,10 +466,12 @@ def get_wider_weight(parent_w, child_w, axis, idx):
     if axis == 0:
         new_weight = parent_w[idx, :, :, :]
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
+        larger_weight[idx, :, :, :] = apply_noise(larger_weight[idx, :, :, :])  # apply noise
     else:
         new_weight = parent_w[:, idx, :, :] / N
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
         larger_weight[:, idx, :, :] = new_weight * (N - 1)
+        larger_weight[:, idx, :, :] = apply_noise(larger_weight[:, idx, :, :])  # apply noise
 
     return idx, larger_weight
 
