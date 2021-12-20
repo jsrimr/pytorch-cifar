@@ -19,7 +19,7 @@ import torch.nn.init as init
 
 from models import MobileNetV2
 
-SMALL_NOISE = 1e-3
+SMALL_NOISE = 1e-3 + 1
 
 
 def get_mean_and_std(dataset):
@@ -331,13 +331,13 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
     # BLOCK1 update
     new_state_dict1 = OrderedDict()
 
-    conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0)
-    bn_3_w_wider = process_bn_weight(block1.bn3, wider_block1.bn3)
+    conv3_idx, conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=None)
+    bn_3_w_wider = process_bn_weight(block1.bn3, conv3_idx)
 
     if wider_block1.shortcut:
-        shortcut_wider = get_wider_weight(block1.shortcut[0].weight, wider_block1.shortcut[0].weight,
-                                          axis=0)
-        bn_shortcut_wider = process_bn_weight(block1.shortcut[1], wider_block1.shortcut[1])
+        _, shortcut_wider = get_wider_weight(block1.shortcut[0].weight, wider_block1.shortcut[0].weight,
+                                             axis=0, idx=conv3_idx)
+        bn_shortcut_wider = process_bn_weight(block1.shortcut[1], conv3_idx)
         new_state_dict1['shortcut.0.weight'] = shortcut_wider
         new_state_dict1['shortcut.1.weight'] = bn_shortcut_wider[:, 0]
         new_state_dict1['shortcut.1.bias'] = bn_shortcut_wider[:, 1]
@@ -347,9 +347,10 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
 
     if last_stage:
         # block2 가 그냥 conv_layer 임
-        wider_block2_conv1_w = get_wider_weight(block2.weight, wider_block2.weight, axis=1)
+        _, wider_block2_conv1_w = get_wider_weight(block2.weight, wider_block2.weight, axis=1, idx=conv3_idx)
     else:
-        wider_block2_conv1_w = get_wider_weight(block2.conv1.weight, wider_block2.conv1.weight, axis=1)
+        _, wider_block2_conv1_w = get_wider_weight(block2.conv1.weight, wider_block2.conv1.weight, axis=1,
+                                                   idx=conv3_idx)
 
     new_state_dict1['conv1.weight'] = block1.conv1.state_dict()['weight']
     new_state_dict1['bn1.weight'] = block1.bn1.state_dict()['weight']
@@ -382,24 +383,24 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
         return [new_state_dict1, new_state_dict2]
     else:
         # conv_1, bn1 c_out expand
-        wider_block2_conv1_w = get_wider_weight(wider_block2_conv1_w,
-                                                wider_block2.conv1.weight, 0)
-        bn_1_w_wider = process_bn_weight(block2.bn1, wider_block2.bn1)
+        conv1_idx, wider_block2_conv1_w = get_wider_weight(wider_block2_conv1_w,
+                                                           wider_block2.conv1.weight, 0, idx=None)
+        bn_1_w_wider = process_bn_weight(block2.bn1, conv1_idx)
 
         # conv_2 update
-        wider_block2_conv2_w = get_wider_weight(block2.conv2.weight,
-                                                wider_block2.conv2.weight, axis=0)
+        _, wider_block2_conv2_w = get_wider_weight(block2.conv2.weight,
+                                                   wider_block2.conv2.weight, axis=0, idx=conv1_idx)
         # bn2 update
-        bn_2_w_wider = process_bn_weight(block2.bn2, wider_block2.bn2)
+        bn_2_w_wider = process_bn_weight(block2.bn2, conv1_idx)
         # new_weights.append(bn_1_w_wider)
 
         # conv_3 update with normalization, bn3 는 shape 업데이트 필요없음
-        wider_block2_conv3_w = get_wider_weight(block2.conv3.weight,
-                                                wider_block2.conv3.weight, axis=1)
+        _, wider_block2_conv3_w = get_wider_weight(block2.conv3.weight,
+                                                   wider_block2.conv3.weight, axis=1, idx=conv1_idx)
         if block2.shortcut:  # 쓰일일이 없을 것 같음
-            shortcut_wider = get_wider_weight(block2.shortcut[0].weight,
-                                              wider_block2.shortcut[0].weight,
-                                              axis=1)
+            _, shortcut_wider = get_wider_weight(block2.shortcut[0].weight,
+                                                 wider_block2.shortcut[0].weight,
+                                                 axis=1, idx=conv3_idx)  # Note! 가까운 conv1_idx 가 아니라 멀리 있는 conv3_idx 임!
             new_state_dict2['shortcut.0.weight'] = shortcut_wider
             new_state_dict2['shortcut.1.weight'] = block2.shortcut[1].state_dict()['weight']
             new_state_dict2['shortcut.1.bias'] = block2.shortcut[1].state_dict()['bias']
@@ -432,32 +433,40 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
         return [new_state_dict1, new_state_dict2]
 
 
-def process_bn_weight(parent_bn_w, child_bn_w):
-    idx = torch.arange(child_bn_w.weight.shape[0] - parent_bn_w.weight.shape[0])
+def process_bn_weight(parent_bn_w, idx):
+    # idx = torch.arange(child_bn_w.weight.shape[0] - parent_bn_w.weight.shape[0])
+
     bn_w = torch.stack([parent_bn_w.weight, parent_bn_w.bias,
                         parent_bn_w.running_mean,
                         parent_bn_w.running_var], axis=1)
-    bn_wider = torch.cat((bn_w, bn_w[idx, :] * SMALL_NOISE), axis=0)
+    bn_wider = torch.cat((bn_w, bn_w[idx, :]), axis=0)
     return bn_wider
 
 
-def get_wider_weight(parent_w, child_w, axis):
+N = 3
+
+
+def get_wider_weight(parent_w, child_w, axis, idx):
     """
     :param parent_w:
     :param child_w:
     :param axis: axis = 0 if c_out expansion, axis=1 if c_in expansion
     :return: larger_weight
     """
-    idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
+    if idx == None:
+        # idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
+        # idx = torch.randint(0, parent_w.shape[axis], (child_w.shape[axis] - parent_w.shape[axis],))
+        perm = torch.randperm(parent_w.size(axis))
+        idx = perm[:child_w.shape[axis] - parent_w.shape[axis]]
     if axis == 0:
-        new_weight = parent_w[idx, :, :, :] * SMALL_NOISE
+        new_weight = parent_w[idx, :, :, :]
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
     else:
-        new_weight = parent_w[:, idx, :, :] / 2 * SMALL_NOISE
+        new_weight = parent_w[:, idx, :, :] / N
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
-        larger_weight[:, idx, :, :] = new_weight
+        larger_weight[:, idx, :, :] = new_weight * (N - 1)
 
-    return larger_weight
+    return idx, larger_weight
 
 
 def bn_identity(bn_origin):

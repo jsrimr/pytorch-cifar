@@ -182,22 +182,14 @@ if __name__ == '__main__':
     # test_block_level()
 
     parent_ckpt = './checkpoint/base_ckpt.pth'
-    `
 
-    # parent_cfg = BASE_CFG
-    parent_cfg = [[1, 16, 1, 1],
-                  [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-                  [6, 32, 3, 2],
-                  [6, 64, 4, 2],
-                  [6, 64, 3, 1],  # 48->64
-                  [6, 96, 2, 2],
-                  [6, 320, 1, 1]]
+    parent_cfg = BASE_CFG
 
     child_cfg = [[1, 16, 1, 1],
                  [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
                  [6, 16, 2, 2],
-                 [6, 32, 4, 2],
-                 [6, 64, 3, 1],  # 48->64
+                 [6, 32, 3, 2],
+                 [6, 64, 2, 1],  # 48->64
                  [6, 96, 2, 2],
                  [6, 320, 1, 1]]
 
