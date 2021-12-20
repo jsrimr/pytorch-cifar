@@ -437,10 +437,11 @@ def process_bn_weight(parent_bn_w, child_bn_w):
     bn_w = torch.stack([parent_bn_w.weight, parent_bn_w.bias,
                         parent_bn_w.running_mean,
                         parent_bn_w.running_var], axis=1)
-    bn_wider = torch.cat((bn_w, bn_w[idx, :] * SMALL_NOISE), axis=0)
+    bn_wider = torch.cat((bn_w, bn_w[idx, :]), axis=0)
     return bn_wider
 
 
+N = 3
 def get_wider_weight(parent_w, child_w, axis):
     """
     :param parent_w:
@@ -450,12 +451,12 @@ def get_wider_weight(parent_w, child_w, axis):
     """
     idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
     if axis == 0:
-        new_weight = parent_w[idx, :, :, :] * SMALL_NOISE
+        new_weight = parent_w[idx, :, :, :]
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
     else:
-        new_weight = parent_w[:, idx, :, :] / 2 * SMALL_NOISE
+        new_weight = parent_w[:, idx, :, :] / N
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
-        larger_weight[:, idx, :, :] = new_weight
+        larger_weight[:, idx, :, :] = new_weight * (N - 1) / N
 
     return larger_weight
 

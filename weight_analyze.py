@@ -16,12 +16,15 @@ PLAN = [
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 current_cfg = BASE_CFG
-plan_idx = 0
 target_stage = 2
+plan_idx = 1
 net = MobileNetV2(cfg=current_cfg).to(device)
 
-net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
-checkpoint = torch.load('./checkpoint/width_2_ckpt.pth')
+for i in range(plan_idx):
+    net, current_cfg = get_next_net(net, current_cfg, PLAN, i)
+# checkpoint = torch.load('./checkpoint_bak/width_2_ckpt.pth')
+# checkpoint = torch.load('./checkpoint_bak/depth_2_ckpt.pth')
+checkpoint = torch.load('./checkpoint/width_2_noise_ckpt.pth')
 net.load_state_dict(checkpoint['net'])
 
 print("loaded")

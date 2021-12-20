@@ -19,6 +19,17 @@ best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 total_epoch = 201
 
+PLAN = [
+    ("width", 2),
+    ("depth", 2),
+    ("width", 3),
+    ("depth", 3),
+    ("width", 4),
+    ("depth", 4),
+    ("width", 5),
+    ("depth", 5),
+]
+
 # Data
 print('==> Preparing data..')
 transform_train = transforms.Compose([
@@ -68,16 +79,6 @@ def get_warmed_new_scheduler(scheduler, optimizer):
 
 if __name__ == '__main__':
 
-    PLAN = [
-        ("width", 2),
-        ("depth", 2),
-        ("width", 3),
-        ("depth", 3),
-        ("width", 4),
-        ("depth", 4),
-        ("width", 5),
-        ("depth", 5),
-    ]
 
     run = neptune.init(
         project="caplab/net-transform-train-setting",
@@ -114,11 +115,10 @@ if __name__ == '__main__':
     print("loaded the model")
 
     plan_idx = None
-
     interval = total_epoch // (len(PLAN) + 1)
     for epoch in range(start_epoch, total_epoch):
-        if epoch != 0 and epoch % interval == 0:
-            plan_idx = epoch // interval - 1 if (epoch // interval - 1) < len(PLAN) else plan_idx
+        if epoch % interval == 0:
+            plan_idx = epoch // interval if (epoch // interval) < len(PLAN) else plan_idx
             target, stage = PLAN[plan_idx]
             net, current_cfg = get_next_net(net, current_cfg, PLAN, plan_idx)
             print("=" * 20 + "\n", f"net changed! {PLAN[plan_idx]}\n", "=" * 20)
