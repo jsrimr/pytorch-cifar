@@ -60,7 +60,7 @@ def check_weight_sync(weight_name, parent_dict, child_dict, axis):
     elif axis == 1:
         assert torch.allclose(parent_w, child_w[:, :subset, :, :])
 
-
+STAGE_IDX = 2
 def test_net_level(parent_cfg, child_cfg, parent_ckpt):
     # Model
     print('==> Building model..')
@@ -71,7 +71,7 @@ def test_net_level(parent_cfg, child_cfg, parent_ckpt):
     # net = net.to(device)
 
     child_net = MobileNetV2(cfg=child_cfg)
-    net_transform_wider_update(parent_net, child_net, 4)
+    net_transform_wider_update(parent_net, child_net, STAGE_IDX)
 
     # todo : 맨 마지막 스테이지 처리
 
@@ -190,6 +190,6 @@ if __name__ == '__main__':
     parent_cfg = BASE_CFG
 
     child_cfg = copy.deepcopy(parent_cfg)
-    child_cfg[2] = [6, 32, 2, 2]
+    child_cfg[STAGE_IDX] = [6, 32, 2, 2]
 
     test_net_level(parent_cfg, child_cfg, parent_ckpt)
