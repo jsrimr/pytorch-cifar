@@ -71,7 +71,7 @@ def test_net_level(parent_cfg, child_cfg, parent_ckpt):
     # net = net.to(device)
 
     child_net = MobileNetV2(cfg=child_cfg)
-    net_transform_wider_update(parent_net, child_net, 4)
+    net_transform_wider_update(parent_net, child_net, STAGE_IDX)
 
     # todo : 맨 마지막 스테이지 처리
 
@@ -177,6 +177,7 @@ def test_layer_level():
     assert torch.allclose(res1, res2)
 
 
+STAGE_IDX = 2
 if __name__ == '__main__':
     # test_layer_level()
     # test_block_level()
@@ -185,13 +186,10 @@ if __name__ == '__main__':
 
     parent_cfg = BASE_CFG
 
-    child_cfg = [[1, 16, 1, 1],
-                 [6, 24, 2, 1],  # NOTE: change stride 2 -> 1 for CIFAR10
-                 [6, 16, 2, 2],
-                 [6, 32, 3, 2],
-                 [6, 64, 2, 1],  # 48->64
-                 [6, 96, 2, 2],
-                 [6, 320, 1, 1]]
+    import copy
+
+    child_cfg = copy.deepcopy(parent_cfg)
+    child_cfg[STAGE_IDX] = [6, 32, 2, 2]
 
     test_net_level(parent_cfg, child_cfg, parent_ckpt)
 
