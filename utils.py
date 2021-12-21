@@ -454,10 +454,10 @@ def get_wider_weight(parent_w, child_w, axis, idx):
     :return: larger_weight
     """
     if idx == None:
-        idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
+        # idx = torch.arange(child_w.shape[axis] - parent_w.shape[axis])
         # idx = torch.randint(0, parent_w.shape[axis], (child_w.shape[axis] - parent_w.shape[axis],))
-        # perm = torch.randperm(parent_w.size(axis))
-        # idx = perm[:child_w.shape[axis] - parent_w.shape[axis]]
+        perm = torch.randperm(parent_w.size(axis))
+        idx = perm[:child_w.shape[axis] - parent_w.shape[axis]]
     if axis == 0:
         new_weight = parent_w[idx, :, :, :]
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
