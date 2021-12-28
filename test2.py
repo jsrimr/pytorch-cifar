@@ -21,6 +21,8 @@ def net_transform_wider(net, wider):
     third = 0
     perm = []
     perm3 = []
+    perm3_old = []
+    curr_out = 0
     for param_tensor in net.state_dict():
         #print(param_tensor, "\t", net.state_dict()[param_tensor].size())
         if (net.state_dict()[param_tensor].size() == wider.state_dict()[param_tensor].size()):
@@ -50,16 +52,40 @@ def net_transform_wider(net, wider):
                 
 
             elif("conv3" in param_tensor):
-                if(third == 0):
-                    diff = wider.state_dict()[param_tensor].shape[0] - net.state_dict()[param_tensor].shape[0]
-                    perm3 = torch.randperm(net.state_dict()[param_tensor].shape[0])
-                    perm3 = perm3[:diff]
-                    third = 1
-                    cop = (net.state_dict()[param_tensor]).clone().detach()
-                    new = cop.data[perm3]
-                    toadd = torch.cat((cop, new), axis=0)
-                    wider.state_dict()[param_tensor].copy_(toadd)
-                else:
+                pt = param_tensor.split('.')
+                c_out = net.state_dict()[param_tensor].shape[0]
+                if(c_out != curr_out): # stage is different
+                    # Beginning
+                    if (third ==0):
+                        diff = wider.state_dict()[param_tensor].shape[0] - net.state_dict()[param_tensor].shape[0]
+                        perm3 = torch.randperm(net.state_dict()[param_tensor].shape[0])
+                        perm3 = perm3[:diff]
+                        first = 0
+                        cop = (net.state_dict()[param_tensor]).clone().detach()
+                        new = cop.data[perm3]
+                        toadd = torch.cat((cop, new), axis=0)
+                        wider.state_dict()[param_tensor].copy_(toadd)
+                        third = 1
+                    else:
+                        cop = (net.state_dict()[param_tensor]).clone().detach()
+                        new = cop.clone().detach().data[:, perm, :, :]
+                        new = new/2
+                        cop[:, perm, :, :] = new
+                        changed = torch.cat((cop, new), axis=1)
+                        first = 0
+                        df = wider.state_dict()[param_tensor].shape[0] - net.state_dict()[param_tensor].shape[0]
+                        if (df > 0): #Not last --> Next stage becomes wider as well 
+                            perm3_old = perm3.clone().detach()
+                            perm3 = torch.randperm(net.state_dict()[param_tensor].shape[0])
+                            perm3 = perm3[:df]
+                            new2 = changed[perm3, :, :, :]
+                            changed = torch.cat((changed, new2), axis=0)
+                        else: #last 
+                            third = 0
+                        wider.state_dict()[param_tensor].copy_(changed)
+                    curr_out = c_out
+                    
+                else: # Same stage as before
                     cop = (net.state_dict()[param_tensor]).clone().detach()
                     new = cop.clone().detach().data[:, perm, :, :]
                     new = new/2
@@ -79,15 +105,33 @@ def net_transform_wider(net, wider):
                 wider.state_dict()[param_tensor].copy_(toadd3)
 
             else :
-                new = 0
+                new = torch.Tensor()
                 cop = (net.state_dict()[param_tensor]).clone().detach()
                 if (("bn3" in param_tensor)):
                     new = cop.data[perm3]
                 elif("bn" in param_tensor):
                     new = cop.data[perm]
+                elif("0.weight" in param_tensor):
+                    aa = wider.state_dict()[param_tensor].shape[0] - net.state_dict()[param_tensor].shape[0]
+                    bb = wider.state_dict()[param_tensor].shape[1] - net.state_dict()[param_tensor].shape[1]
+                    if(aa > 0):
+                        if (bb > 0):
+                            new2 = cop.clone().detach().data[:, perm3_old, :, :]
+                            new2 = new2/2
+                            cop[:, perm3_old, :, :] = new2
+                            cop = torch.cat((cop, new2), axis=1)
+                        new = cop.data[perm3]
+
+                    else:
+                        new2 = cop.clone().detach().data[:, perm3, :, :]
+                        new2 = new2/2
+                        cop[:, perm3, :, :] = new2
+                        cop = torch.cat((cop, new2), axis=1)
+
                 else:
                     new = cop.data[perm3]
                 toadd = torch.cat((cop, new), axis=0)
+                #print(param_tensor)
                 wider.state_dict()[param_tensor].copy_(toadd)
                     
     return 
@@ -102,10 +146,18 @@ rs = sml1(x)
 rs2 = sml2(x)
 
 #assert torch.allclose(rs,rs2, atol=1e-06, rtol=0)
+newcfg= [(1,  20, 1, 1),
+       (6,  26, 2, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
+       (6,  42, 3, 2),
+       (6,  70, 4, 2),
+       (6,  132, 3, 1),
+       (6, 180, 3, 2),
+       (6, 320, 1, 1)]
 
 # Real Test
 net = MobileNetV2()
-wider_net = wider_MobileNetV2()
+#wider_net = wider_MobileNetV2()
+wider_net = MobileNetV2(cfg = newcfg)
 #deeper_net = deeper_MobileNetV2()
 
 
@@ -125,13 +177,13 @@ result = net(x)
 result_wider = wider_net(x)
 #result_deeper = deeper_net(x)
 
-assert torch.allclose(result,result_wider, atol=1e-06, rtol=0)
+assert torch.allclose(result,result_wider, atol=1e-05, rtol=0)
 #assert torch.allclose(result,result_deeper)
 
 
 
 #### REAL TEST
-
+"""
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true',
@@ -269,3 +321,4 @@ for epoch in range(start_epoch, start_epoch+200):
     train(epoch)
     test(epoch)
     scheduler.step()
+"""

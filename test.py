@@ -28,6 +28,7 @@ result = net2(net(x))
 result2 = net2(net(x))
 result_deeper = net2(deeper_net(net(x)))
 
+#result_wider = wider_net(x)
 #assert torch.allclose(result,result_wider)
 assert torch.allclose(result, result2)
 print("Assert 1 True")
