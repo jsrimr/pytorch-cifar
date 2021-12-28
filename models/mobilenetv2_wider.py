@@ -21,19 +21,23 @@ class Block(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False)
         self.bn3 = nn.BatchNorm2d(out_planes)
-
+        
         self.shortcut = nn.Sequential()
-        if stride == 1 and in_planes != out_planes:
+        if (stride == 1 and in_planes != out_planes):
+            #print(in_planes, out_planes, expansion, stride)
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False),
-                nn.BatchNorm2d(out_planes),
+                #nn.BatchNorm2d(out_planes),
             )
+        
 
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
         out = F.relu(self.bn2(self.conv2(out)))
         out = self.bn3(self.conv3(out))
-        out = out + self.shortcut(x) if self.stride==1 else out
+        if(self.stride == 1):
+            out = out + self.shortcut(x)
+        
         return out
 
 
@@ -67,6 +71,8 @@ class wider_MobileNetV2(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        
+        # Original Code
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.layers(out)
         out = F.relu(self.bn2(self.conv2(out)))
@@ -74,13 +80,15 @@ class wider_MobileNetV2(nn.Module):
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out = self.linear(out)
+        
+       
         return out
 
-
+"""
 def test():
     net = MobileNetV2()
     x = torch.randn(2,3,32,32)
     y = net(x)
     print(y.size())
-
+"""
 # test()
