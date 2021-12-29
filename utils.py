@@ -229,6 +229,7 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
     child_block_list = list(list(child_net.layers)[stage_idx])
     # 차이나는 부분 핸들
     block_weight_list = []
+    forced_idx = False
     for i, (parent_block1, child_block1) in enumerate(zip(parent_block_list, child_block_list)):
         is_last_stage = (stage_idx == len(child_net.layers) - 1) or (stage_idx == -1)
         if is_last_stage:
@@ -239,6 +240,7 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
                 parent_block2 = parent_block_list[i + 1]
                 child_block2 = child_block_list[i + 1]
             else:
+                forced_idx = True
                 parent_block2 = list(list(parent_net.layers)[stage_idx + 1])[0]
                 child_block2 = list(list(child_net.layers)[stage_idx + 1])[0]
 
@@ -246,13 +248,15 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
             tmp_block = Block(child_block1.in_planes, parent_block1.out_planes, parent_block1.expansion,
                               parent_block1.stride)
             tmp_block.load_state_dict(block_weight_list[-1], strict=False)
-
-            new_weight1, new_weight2 = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage)
+            if forced_idx:
+                new_weight1, new_weight2, _ = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage, conv3_idx)
+            else:
+                new_weight1, new_weight2, conv3_idx = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage, None)
             block_weight_list[-1] = new_weight1
             block_weight_list.append(new_weight2)
         else:
-            block_weight_list.extend(
-                block_update(parent_block1, parent_block2, child_block1, child_block2, is_last_stage))
+            new_weight1, new_weight2, conv3_idx = block_update(parent_block1, parent_block2, child_block1, child_block2, is_last_stage, None)
+            block_weight_list.extend([new_weight1, new_weight2])
 
     for weight, child_block in zip(block_weight_list, child_block_list):
         try:
@@ -318,7 +322,7 @@ class BlockWeight:
         self.shortcut = Box({k[9:]: v for k, v in state_dict.items() if k.startswith("shortcut")})
 
 
-def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
+def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, forced_idx=None):
     """
 
     :param block1_weight:
@@ -331,7 +335,11 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
     # BLOCK1 update
     new_state_dict1 = OrderedDict()
 
-    conv3_idx, conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=None)
+    if forced_idx != None:
+        conv3_idx, conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=forced_idx)
+    else:
+        conv3_idx, conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=None)
+
     bn_3_w_wider = process_bn_weight(block1.bn3, conv3_idx)
 
     if wider_block1.shortcut:
@@ -397,7 +405,7 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
         # conv_3 update with normalization, bn3 는 shape 업데이트 필요없음
         _, wider_block2_conv3_w = get_wider_weight(block2.conv3.weight,
                                                    wider_block2.conv3.weight, axis=1, idx=conv1_idx)
-        if block2.shortcut:  # 쓰일일이 없을 것 같음
+        if block2.shortcut:  # 쓰일일이 없을 것 같음. 두번째 블록부터는 input 과 output shape 이 같을테니
             _, shortcut_wider = get_wider_weight(block2.shortcut[0].weight,
                                                  wider_block2.shortcut[0].weight,
                                                  axis=1, idx=conv3_idx)  # Note! 가까운 conv1_idx 가 아니라 멀리 있는 conv3_idx 임!
@@ -430,7 +438,7 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False):
         new_state_dict2['bn3.num_batches_tracked'] = block2.bn3.state_dict()['num_batches_tracked']
 
         # wider_block2.load_state_dict(new_state_dict2)
-        return [new_state_dict1, new_state_dict2]
+        return [new_state_dict1, new_state_dict2, conv3_idx]
 
 
 def process_bn_weight(parent_bn_w, idx):
