@@ -229,7 +229,7 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
     child_block_list = list(list(child_net.layers)[stage_idx])
     # 차이나는 부분 핸들
     block_weight_list = []
-    forced_idx = False
+    # forced_idx = False
     for i, (parent_block1, child_block1) in enumerate(zip(parent_block_list, child_block_list)):
         is_last_stage = (stage_idx == len(child_net.layers) - 1) or (stage_idx == -1)
         if is_last_stage:
@@ -240,7 +240,7 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
                 parent_block2 = parent_block_list[i + 1]
                 child_block2 = child_block_list[i + 1]
             else:
-                forced_idx = True
+                # forced_idx = True
                 parent_block2 = list(list(parent_net.layers)[stage_idx + 1])[0]
                 child_block2 = list(list(child_net.layers)[stage_idx + 1])[0]
 
@@ -248,13 +248,10 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
             tmp_block = Block(child_block1.in_planes, parent_block1.out_planes, parent_block1.expansion,
                               parent_block1.stride)
             tmp_block.load_state_dict(block_weight_list[-1], strict=False)
-            if forced_idx:
-                new_weight1, new_weight2, _ = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage, conv3_idx)
-            else:
-                new_weight1, new_weight2, conv3_idx = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage, None)
+            new_weight1, new_weight2, _ = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage, conv3_idx)            
             block_weight_list[-1] = new_weight1
             block_weight_list.append(new_weight2)
-        else:
+        else:  # 첫블록
             new_weight1, new_weight2, conv3_idx = block_update(parent_block1, parent_block2, child_block1, child_block2, is_last_stage, None)
             block_weight_list.extend([new_weight1, new_weight2])
 

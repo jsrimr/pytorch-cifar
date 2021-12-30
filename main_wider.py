@@ -177,19 +177,30 @@ def test_layer_level():
     assert torch.allclose(res1, res2)
 
 
-STAGE_IDX = 2
+STAGE_IDX = 5
 if __name__ == '__main__':
     # test_layer_level()
     # test_block_level()
 
     parent_ckpt = './checkpoint/base_ckpt.pth'
-
     parent_cfg = BASE_CFG
 
     import copy
-
     child_cfg = copy.deepcopy(parent_cfg)
-    child_cfg[STAGE_IDX] = [6, 32, 2, 2]
+    if STAGE_IDX == 2:
+        child_cfg[STAGE_IDX] = [6, 32, 2, 2]
+
+    elif STAGE_IDX ==3:
+        child_cfg[STAGE_IDX] = [6, 64, 3, 2]
+
+    elif STAGE_IDX ==4:
+        child_cfg[STAGE_IDX] = [6, 96, 2, 1]
+    
+    elif STAGE_IDX ==5:
+        child_cfg[STAGE_IDX] = [6, 160, 2, 2]
+
+    elif STAGE_IDX ==6:
+        child_cfg[STAGE_IDX] = [6, 380, 1, 1]
 
     test_net_level(parent_cfg, child_cfg, parent_ckpt)
 
