@@ -14,7 +14,7 @@ from utils import progress_bar
 import neptune.new as neptune
 
 FROM_SCRATCH = True
-APPLY_NOISE = True
+APPLY_NOISE = False
 from models.mobilenetv2 import MobileNetV2
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -117,67 +117,58 @@ if __name__ == '__main__':
     for plan_idx, plan in enumerate(PLAN):
         target, stage = PLAN[plan_idx]
         new_net, current_cfg = get_next_net(new_net, current_cfg, PLAN, plan_idx, apply_noise=APPLY_NOISE)
-        print("=" * 20 + "\n", f"net changed! {PLAN[plan_idx]}\n", "=" * 20)
+        print("=" * 20 + "\n", f"new_net changed! {PLAN[plan_idx]}\n", "=" * 20)
         new_net = new_net.to(device)  # NOTE : net should be on the right device before loading optimizer, scheduler
         
     # net_transform 이 잘됐는지 확인하는 snippet
     # import sys
     # correct = 0
     # total = 0
-    # net.eval()  # 이게 있고 없고에 따라서 accuracy 가 확달라지네?!
+    # new_net.eval()  # 이게 있고 없고에 따라서 accuracy 가 확달라지네?!
     # with torch.no_grad():
     #     for batch_idx, (inputs, targets) in enumerate(testloader):
     #         inputs, targets = inputs.to(device), targets.to(device)
-    #         outputs = net(inputs)
+    #         outputs = new_net(inputs)
     #         _, predicted = outputs.max(1)
     #         total += targets.size(0)
     #         correct += predicted.eq(targets).sum().item()
     #     print(f"accuracy = {100. * correct / total}")
     # sys.exit()
 
-    # %%
-     # depth
-    different_params =OrderedDict()
-    same_params =OrderedDict()
-    original_params = set(net.state_dict().keys())
-    for k,v in new_net.state_dict().items():
-        if k not in original_params:
-            # differnt_params.add(param)
-            different_params[k] = v
-        else:
-            same_params[k] = v
+    from utils import get_same_and_different_params
+    same_params, different_params = get_same_and_different_params(net, new_net)
 
-    # width
-    for k, v in new_net.state_dict().items():
-        if k in net.state_dict() and net.state_dict()[k].shape != v.shape:
-            different_params[k] = v
-        else:
-            same_params[k] = v
+    # (p for p in net.parameters() if p in different_params.values())
+    # (p for p in net.parameters() if p in same_params.values())
 
+    optimizer = optim.SGD(
+                        [
+                            # {"params": (p for name, p in new_net.named_parameters() if name in different_params), "lr": args.lr/ checkpoint['scheduler']['last_epoch']}, # },# 
+                            {"params": (p for name, p in new_net.named_parameters() if name in different_params), "lr": args.lr / 10}, # },# 
+                            # {"params": (p for name, p in new_net.named_parameters() if name in different_params), "lr": checkpoint['optimizer']['param_groups'][0]['lr']}, # },# 
+                            {"params": (p for name,p in new_net.named_parameters() if name in same_params), "lr": checkpoint['optimizer']['param_groups'][0]['lr']},
+                        ], momentum=0.9, weight_decay=5e-4)
 
-    # optimizer = optim.SGD(
-    #                     [
-    #                         {"params": list(different_params.values()), "lr": args.lr},
-    #                         {"params": list(same_params.values()), "lr": checkpoint['optimizer']['param_groups'][0]['lr']},
-    #                     ], momentum=0.9, weight_decay=5e-4)
     # / checkpoint['scheduler']['last_epoch']
-    optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                          momentum=0.9, weight_decay=5e-4)
-    optimizer = optim.SGD(net.parameters(), lr=optimizer.param_groups[0]['lr'],
-                        momentum=0.9, weight_decay=5e-4)
+    # optimizer = optim.SGD(net.parameters(), lr=args.lr,
+    #                       momentum=0.9, weight_decay=5e-4)
+    # optimizer = optim.SGD(new_net.parameters(), lr=checkpoint['optimizer']['param_groups'][0]['lr'],
+    #                     momentum=0.9, weight_decay=5e-4)
     scheduler = make_scheduler(optimizer)
-    scheduler = get_warmed_new_scheduler(scheduler, optimizer)
+    # scheduler = get_warmed_new_scheduler(scheduler, optimizer)
 
     interval = total_epoch // (len(PLAN) + 1)
     for epoch in range(start_epoch, total_epoch):           
-        train(net, criterion, optimizer, trainloader, epoch, device, run)
-
+        train(new_net, criterion, optimizer, trainloader, epoch, device, run)
         exp_name = '_'.join(map(str, PLAN[plan_idx])) if (plan_idx is not None) else "base"
-        test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, exp_name)
+        test(new_net, optimizer, scheduler, criterion, testloader, epoch, device, run, exp_name)
 
         # run['train/lr'].log(scheduler.get_last_lr())
         run['train/lr1'].log(scheduler.get_last_lr()[0])
-        run['train/lr2'].log(scheduler.get_last_lr()[1])
+        try:
+            run['train/lr2'].log(scheduler.get_last_lr()[1])
+        except Exception as e:
+            print(e)
         scheduler.step()
 
     run.stop()

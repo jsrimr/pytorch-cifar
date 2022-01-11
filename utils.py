@@ -3,6 +3,8 @@
     - msr_init: net parameter initialization.
     - progress_bar: progress bar mimic xlua.progress.
 '''
+from box import Box
+from models.mobilenetv2 import Block
 import copy
 import os
 import sys
@@ -24,7 +26,8 @@ SMALL_NOISE = 1e-3 + 1
 
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=2)
+    dataloader = torch.utils.data.DataLoader(
+        dataset, batch_size=1, shuffle=True, num_workers=2)
     mean = torch.zeros(3)
     std = torch.zeros(3)
     print('==> Computing mean and std..')
@@ -53,16 +56,17 @@ def init_params(net):
                 init.constant(m.bias, 0)
 
 
-_, term_width = os.popen('stty size', 'r').read().split()
-term_width = int(term_width)
 
-TOTAL_BAR_LENGTH = 65.
-last_time = time.time()
-begin_time = last_time
 
 
 def progress_bar(current, total, msg=None):
-    global last_time, begin_time
+    _, term_width = os.popen('stty size', 'r').read().split()
+    term_width = int(term_width)
+
+    TOTAL_BAR_LENGTH = 65.
+    last_time = time.time()
+    begin_time = last_time
+    # global last_time, begin_time
     if current == 0:
         begin_time = time.time()  # Reset for new bar.
 
@@ -168,6 +172,8 @@ def train(net, criterion, optimizer, trainloader, epoch, device, run):
 
 
 best_acc = 0.
+
+
 def test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, exp_name):
     global best_acc
     net.eval()
@@ -209,10 +215,7 @@ def test(net, optimizer, scheduler, criterion, testloader, epoch, device, run, e
         best_acc = acc
 
 
-from models.mobilenetv2 import Block
-
-
-def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, stage_idx):
+def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, stage_idx, apply_noise=False):
     # 기본적으로 같은 거 복사
     new_state_dict = OrderedDict()
     differnt_keys = set()
@@ -231,7 +234,8 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
     block_weight_list = []
     # forced_idx = False
     for i, (parent_block1, child_block1) in enumerate(zip(parent_block_list, child_block_list)):
-        is_last_stage = (stage_idx == len(child_net.layers) - 1) or (stage_idx == -1)
+        is_last_stage = (stage_idx == len(
+            child_net.layers) - 1) or (stage_idx == -1)
         if is_last_stage:
             parent_block2 = parent_net.conv2
             child_block2 = child_net.conv2
@@ -248,11 +252,13 @@ def net_transform_wider_update(parent_net: MobileNetV2, child_net: MobileNetV2, 
             tmp_block = Block(child_block1.in_planes, parent_block1.out_planes, parent_block1.expansion,
                               parent_block1.stride)
             tmp_block.load_state_dict(block_weight_list[-1], strict=False)
-            new_weight1, new_weight2, _ = block_update(tmp_block, parent_block2, child_block1, child_block2, is_last_stage, conv3_idx)            
+            new_weight1, new_weight2, _ = block_update(
+                tmp_block, parent_block2, child_block1, child_block2, is_last_stage, conv3_idx, apply_noise=apply_noise)
             block_weight_list[-1] = new_weight1
             block_weight_list.append(new_weight2)
         else:  # 첫블록
-            new_weight1, new_weight2, conv3_idx = block_update(parent_block1, parent_block2, child_block1, child_block2, is_last_stage, None)
+            new_weight1, new_weight2, conv3_idx = block_update(
+                parent_block1, parent_block2, child_block1, child_block2, is_last_stage, None, apply_noise=apply_noise)
             block_weight_list.extend([new_weight1, new_weight2])
 
     for weight, child_block in zip(block_weight_list, child_block_list):
@@ -283,14 +289,14 @@ TARGET_CFG = [
     (6, 380, 1, 1)]
 
 
-def get_next_net(current_net, current_cfg, plan, plan_idx):
+def get_next_net(current_net, current_cfg, plan, plan_idx, apply_noise):
     target, stage_idx = plan[plan_idx]
     if target == "width":
         new_cfg = copy.deepcopy(current_cfg)
         new_cfg[stage_idx][1] = TARGET_CFG[stage_idx][1]
         next_net = MobileNetV2(cfg=new_cfg)
 
-        net_transform_wider_update(current_net, next_net, stage_idx)
+        net_transform_wider_update(current_net, next_net, stage_idx, apply_noise=apply_noise)
 
     elif target == "depth":
         new_cfg = copy.deepcopy(current_cfg)
@@ -298,28 +304,41 @@ def get_next_net(current_net, current_cfg, plan, plan_idx):
         next_net = MobileNetV2(cfg=new_cfg)
 
         next_net.load_state_dict(current_net.state_dict(), strict=False)
-        next_net.layers[stage_idx][-1].bn3 = process_bn(next_net.layers[stage_idx][-1].bn3)
+
+        block = next_net.layers[stage_idx][-1]
+        block.bn3 = process_bn( block.bn3)
+
+        if apply_noise:
+            # for idx, block in enumerate(next_net.layers[stage_idx][-1]):
+            nn.init.kaiming_normal_(block.conv1.weight, mode='fan_out')
+            nn.init.kaiming_normal_(block.conv2.weight, mode='fan_out')
+            nn.init.kaiming_normal_(block.conv3.weight, mode='fan_out')
+
 
     return next_net, new_cfg
-
-
-from box import Box
 
 
 class BlockWeight:
     pass
 
     def __init__(self, state_dict: OrderedDict):
-        self.conv1 = Box({k[6:]: v for k, v in state_dict.items() if k.startswith("conv1")})
-        self.bn1 = Box({k[4:]: v for k, v in state_dict.items() if k.startswith("bn1")})
-        self.conv2 = Box({k[6:]: v for k, v in state_dict.items() if k.startswith("conv2")})
-        self.bn2 = Box({k[4:]: v for k, v in state_dict.items() if k.startswith("bn2")})
-        self.conv3 = Box({k[6:]: v for k, v in state_dict.items() if k.startswith("conv3")})
-        self.bn3 = Box({k[4:]: v for k, v in state_dict.items() if k.startswith("bn3")})
-        self.shortcut = Box({k[9:]: v for k, v in state_dict.items() if k.startswith("shortcut")})
+        self.conv1 = Box(
+            {k[6:]: v for k, v in state_dict.items() if k.startswith("conv1")})
+        self.bn1 = Box(
+            {k[4:]: v for k, v in state_dict.items() if k.startswith("bn1")})
+        self.conv2 = Box(
+            {k[6:]: v for k, v in state_dict.items() if k.startswith("conv2")})
+        self.bn2 = Box(
+            {k[4:]: v for k, v in state_dict.items() if k.startswith("bn2")})
+        self.conv3 = Box(
+            {k[6:]: v for k, v in state_dict.items() if k.startswith("conv3")})
+        self.bn3 = Box(
+            {k[4:]: v for k, v in state_dict.items() if k.startswith("bn3")})
+        self.shortcut = Box(
+            {k[9:]: v for k, v in state_dict.items() if k.startswith("shortcut")})
 
 
-def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, forced_idx=None):
+def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, forced_idx=None, apply_noise=False):
     """
 
     :param block1_weight:
@@ -333,50 +352,59 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, f
     new_state_dict1 = OrderedDict()
 
     if forced_idx != None:
-        conv3_idx, conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=forced_idx)
+        conv3_idx, conv_3_w_wider = get_wider_weight(
+            block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=forced_idx, apply_noise=apply_noise)
     else:
-        conv3_idx, conv_3_w_wider = get_wider_weight(block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=None)
+        conv3_idx, conv_3_w_wider = get_wider_weight(
+            block1.conv3.weight, wider_block1.conv3.weight, axis=0, idx=None, apply_noise=apply_noise)
 
     bn_3_w_wider = process_bn_weight(block1.bn3, conv3_idx)
 
     if wider_block1.shortcut:
         _, shortcut_wider = get_wider_weight(block1.shortcut[0].weight, wider_block1.shortcut[0].weight,
-                                             axis=0, idx=conv3_idx)
+                                             axis=0, idx=conv3_idx, apply_noise=apply_noise)
         bn_shortcut_wider = process_bn_weight(block1.shortcut[1], conv3_idx)
         new_state_dict1['shortcut.0.weight'] = shortcut_wider
         new_state_dict1['shortcut.1.weight'] = bn_shortcut_wider[:, 0]
         new_state_dict1['shortcut.1.bias'] = bn_shortcut_wider[:, 1]
         new_state_dict1['shortcut.1.running_mean'] = bn_shortcut_wider[:, 2]
         new_state_dict1['shortcut.1.running_var'] = bn_shortcut_wider[:, 3]
-        new_state_dict1['shortcut.1.num_batches_tracked'] = block1.shortcut[1].state_dict()['num_batches_tracked']
+        new_state_dict1['shortcut.1.num_batches_tracked'] = block1.shortcut[1].state_dict()[
+            'num_batches_tracked']
 
     if last_stage:
         # block2 가 그냥 conv_layer 임
-        _, wider_block2_conv1_w = get_wider_weight(block2.weight, wider_block2.weight, axis=1, idx=conv3_idx)
+        _, wider_block2_conv1_w = get_wider_weight(
+            block2.weight, wider_block2.weight, axis=1, idx=conv3_idx, apply_noise=apply_noise)
     else:
         _, wider_block2_conv1_w = get_wider_weight(block2.conv1.weight, wider_block2.conv1.weight, axis=1,
-                                                   idx=conv3_idx)
+                                                   idx=conv3_idx, apply_noise=apply_noise)
 
     new_state_dict1['conv1.weight'] = block1.conv1.state_dict()['weight']
     new_state_dict1['bn1.weight'] = block1.bn1.state_dict()['weight']
     new_state_dict1['bn1.bias'] = block1.bn1.state_dict()['bias']
-    new_state_dict1['bn1.running_mean'] = block1.bn1.state_dict()['running_mean']
+    new_state_dict1['bn1.running_mean'] = block1.bn1.state_dict()[
+        'running_mean']
     new_state_dict1['bn1.running_var'] = block1.bn1.state_dict()['running_var']
-    new_state_dict1['bn1.num_batches_tracked'] = block1.bn1.state_dict()['num_batches_tracked']
+    new_state_dict1['bn1.num_batches_tracked'] = block1.bn1.state_dict()[
+        'num_batches_tracked']
 
     new_state_dict1['conv2.weight'] = block1.conv2.state_dict()['weight']
     new_state_dict1['bn2.weight'] = block1.bn2.state_dict()['weight']
     new_state_dict1['bn2.bias'] = block1.bn2.state_dict()['bias']
-    new_state_dict1['bn2.running_mean'] = block1.bn2.state_dict()['running_mean']
+    new_state_dict1['bn2.running_mean'] = block1.bn2.state_dict()[
+        'running_mean']
     new_state_dict1['bn2.running_var'] = block1.bn2.state_dict()['running_var']
-    new_state_dict1['bn2.num_batches_tracked'] = block1.bn2.state_dict()['num_batches_tracked']
+    new_state_dict1['bn2.num_batches_tracked'] = block1.bn2.state_dict()[
+        'num_batches_tracked']
 
     new_state_dict1['conv3.weight'] = conv_3_w_wider
     new_state_dict1['bn3.weight'] = bn_3_w_wider[:, 0]
     new_state_dict1['bn3.bias'] = bn_3_w_wider[:, 1]
     new_state_dict1['bn3.running_mean'] = bn_3_w_wider[:, 2]
     new_state_dict1['bn3.running_var'] = bn_3_w_wider[:, 3]
-    new_state_dict1['bn3.num_batches_tracked'] = block1.bn3.state_dict()['num_batches_tracked']
+    new_state_dict1['bn3.num_batches_tracked'] = block1.bn3.state_dict()[
+        'num_batches_tracked']
 
     # wider_block1.load_state_dict(new_state_dict)
 
@@ -389,50 +417,60 @@ def block_update(block1, block2, wider_block1, wider_block2, last_stage=False, f
     else:
         # conv_1, bn1 c_out expand
         conv1_idx, wider_block2_conv1_w = get_wider_weight(wider_block2_conv1_w,
-                                                           wider_block2.conv1.weight, 0, idx=None)
+                                                           wider_block2.conv1.weight, 0, idx=None, apply_noise=apply_noise)
         bn_1_w_wider = process_bn_weight(block2.bn1, conv1_idx)
 
         # conv_2 update
         _, wider_block2_conv2_w = get_wider_weight(block2.conv2.weight,
-                                                   wider_block2.conv2.weight, axis=0, idx=conv1_idx)
+                                                   wider_block2.conv2.weight, axis=0, idx=conv1_idx, apply_noise=apply_noise)
         # bn2 update
         bn_2_w_wider = process_bn_weight(block2.bn2, conv1_idx)
         # new_weights.append(bn_1_w_wider)
 
         # conv_3 update with normalization, bn3 는 shape 업데이트 필요없음
         _, wider_block2_conv3_w = get_wider_weight(block2.conv3.weight,
-                                                   wider_block2.conv3.weight, axis=1, idx=conv1_idx)
+                                                   wider_block2.conv3.weight, axis=1, idx=conv1_idx, apply_noise=apply_noise)
         if block2.shortcut:  # 쓰일일이 없을 것 같음. 두번째 블록부터는 input 과 output shape 이 같을테니
             _, shortcut_wider = get_wider_weight(block2.shortcut[0].weight,
                                                  wider_block2.shortcut[0].weight,
-                                                 axis=1, idx=conv3_idx)  # Note! 가까운 conv1_idx 가 아니라 멀리 있는 conv3_idx 임!
+                                                 axis=1, idx=conv3_idx, apply_noise=apply_noise)  # Note! 가까운 conv1_idx 가 아니라 멀리 있는 conv3_idx 임!
             new_state_dict2['shortcut.0.weight'] = shortcut_wider
-            new_state_dict2['shortcut.1.weight'] = block2.shortcut[1].state_dict()['weight']
-            new_state_dict2['shortcut.1.bias'] = block2.shortcut[1].state_dict()['bias']
-            new_state_dict2['shortcut.1.running_mean'] = block2.shortcut[1].state_dict()['running_mean']
-            new_state_dict2['shortcut.1.running_var'] = block2.shortcut[1].state_dict()['running_var']
-            new_state_dict2['shortcut.1.num_batches_tracked'] = block2.shortcut[1].state_dict()['num_batches_tracked']
+            new_state_dict2['shortcut.1.weight'] = block2.shortcut[1].state_dict()[
+                'weight']
+            new_state_dict2['shortcut.1.bias'] = block2.shortcut[1].state_dict()[
+                'bias']
+            new_state_dict2['shortcut.1.running_mean'] = block2.shortcut[1].state_dict()[
+                'running_mean']
+            new_state_dict2['shortcut.1.running_var'] = block2.shortcut[1].state_dict()[
+                'running_var']
+            new_state_dict2['shortcut.1.num_batches_tracked'] = block2.shortcut[1].state_dict()[
+                'num_batches_tracked']
 
         new_state_dict2['conv1.weight'] = wider_block2_conv1_w
         new_state_dict2['bn1.weight'] = bn_1_w_wider[:, 0]
         new_state_dict2['bn1.bias'] = bn_1_w_wider[:, 1]
         new_state_dict2['bn1.running_mean'] = bn_1_w_wider[:, 2]
         new_state_dict2['bn1.running_var'] = bn_1_w_wider[:, 3]
-        new_state_dict2['bn1.num_batches_tracked'] = block2.bn1.state_dict()['num_batches_tracked']
+        new_state_dict2['bn1.num_batches_tracked'] = block2.bn1.state_dict()[
+            'num_batches_tracked']
 
         new_state_dict2['conv2.weight'] = wider_block2_conv2_w
         new_state_dict2['bn2.weight'] = bn_2_w_wider[:, 0]
         new_state_dict2['bn2.bias'] = bn_2_w_wider[:, 1]
         new_state_dict2['bn2.running_mean'] = bn_2_w_wider[:, 2]
         new_state_dict2['bn2.running_var'] = bn_2_w_wider[:, 3]
-        new_state_dict2['bn2.num_batches_tracked'] = block2.bn2.state_dict()['num_batches_tracked']
+        new_state_dict2['bn2.num_batches_tracked'] = block2.bn2.state_dict()[
+            'num_batches_tracked']
 
         new_state_dict2['conv3.weight'] = wider_block2_conv3_w
         new_state_dict2['bn3.weight'] = block2.bn3.state_dict()['weight']
         new_state_dict2['bn3.bias'] = block2.bn3.state_dict()['bias']
-        new_state_dict2['bn3.running_mean'] = block2.bn3.state_dict()['running_mean']
-        new_state_dict2['bn3.running_var'] = block2.bn3.state_dict()['running_var']
-        new_state_dict2['bn3.num_batches_tracked'] = block2.bn3.state_dict()['num_batches_tracked']
+        new_state_dict2['bn3.running_mean'] = block2.bn3.state_dict()[
+            'running_mean']
+        new_state_dict2['bn3.running_var'] = block2.bn3.state_dict()[
+            'running_var']
+        new_state_dict2['bn3.num_batches_tracked'] = block2.bn3.state_dict()[
+            'num_batches_tracked']
 
         # wider_block2.load_state_dict(new_state_dict2)
         return [new_state_dict1, new_state_dict2, conv3_idx]
@@ -451,7 +489,7 @@ def process_bn_weight(parent_bn_w, idx):
 N = 3
 
 
-def get_wider_weight(parent_w, child_w, axis, idx):
+def get_wider_weight(parent_w, child_w, axis, idx, apply_noise=False):
     """
     :param parent_w:
     :param child_w:
@@ -465,21 +503,31 @@ def get_wider_weight(parent_w, child_w, axis, idx):
         idx = perm[:child_w.shape[axis] - parent_w.shape[axis]]
     if axis == 0:
         new_weight = parent_w[idx, :, :, :]
+        if apply_noise:
+            nn.init.normal_(new_weight)
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
+
     else:
         new_weight = parent_w[:, idx, :, :] / 2
+        if apply_noise:
+            nn.init.normal_(new_weight)
         larger_weight = torch.cat((parent_w, new_weight), axis=axis)
         larger_weight[:, idx, :, :] = new_weight
+
+    # if apply_noise:
+    #     larger_weight += torch.randn_like(larger_weight) * 1e-3
+        # nn.init.normal_(larger_weight)
 
     return idx, larger_weight
 
 
-def bn_identity(bn_origin):
-    bn = deepcopy(bn_origin)
-    bn.weight.data = torch.sqrt(bn_origin.running_var + bn_origin.eps)
-    bn.bias.data = bn_origin.running_mean  # torch.zeros_like(bn.bias.data) #bn_origin.running_mean
+# def bn_identity(bn_origin):
+#     bn = deepcopy(bn_origin)
+#     bn.weight.data = torch.sqrt(bn_origin.running_var + bn_origin.eps)
+#     # torch.zeros_like(bn.bias.data) #bn_origin.running_mean
+#     bn.bias.data = bn_origin.running_mean
 
-    return bn
+#     return bn
 
 
 def process_bn(bn_origin):
@@ -490,15 +538,30 @@ def process_bn(bn_origin):
     return bn
 
 
-def get_conv_identity_layer(conv_layer):
-    w = conv_layer.weight.data
-    mid = w.shape[-1] // 2
+# def get_conv_identity_layer(conv_layer):
+#     w = conv_layer.weight.data
+#     mid = w.shape[-1] // 2
 
-    # todo : add noise
-    for out in range(w.shape[0]):  # 모든 커널 돌며
-        idx = out % w.shape[1]
-        tmp = torch.zeros_like(w[out])
-        tmp[idx, mid, mid] = 1.
-        w[out] = tmp
+#     # todo : add noise
+#     for out in range(w.shape[0]):  # 모든 커널 돌며
+#         idx = out % w.shape[1]
+#         tmp = torch.zeros_like(w[out])
+#         tmp[idx, mid, mid] = 1.
+#         w[out] = tmp
 
-    return w
+#     return w
+
+
+def get_same_and_different_params(net, new_net):
+    different_params = set()
+    # same_params =OrderedDict()
+    original_params = set(net.state_dict().keys())
+    for k,v in new_net.state_dict().items():
+        if k not in original_params or net.state_dict()[k].shape != v.shape:
+            different_params.add(k)
+            # different_params[k] = v
+    
+    same_params = original_params.difference(different_params)
+
+    assert same_params.intersection(different_params) == set()
+    return same_params, different_params
