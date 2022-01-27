@@ -86,18 +86,22 @@ def net_transform_wider(net, wider):
                 cop = (net.state_dict()[param_tensor]).clone().detach()
                 new = cop.clone().detach().data[:, perm3, :, :]
                 new = new/2
+                noise = torch.Tensor((0.03)*np.random.normal(0,1,new.shape)).cuda()
+                #new = new + noise
                 cop[:, perm3, :, :] = new
                 changed = torch.cat((cop, new), axis=1)
 
                 diff = wider.state_dict()[param_tensor].shape[0] - net.state_dict()[param_tensor].shape[0]
                 if (diff > 0):
                     new2 = changed[perm, :, :, :]
+                    noise2 = torch.Tensor((0.03)*np.random.normal(0,1,new2.shape)).cuda()
+                    #new2 = new2 + noise2
                     changed = torch.cat((changed, new2), axis=0)
                 
                 ## NOISE
-                noise = torch.Tensor((0.001)*np.random.normal(0,1,changed.shape)).cuda()
-                changed = changed + noise
-
+                
+                noise = torch.Tensor((0.03)*np.random.normal(0,1,changed.shape)).cuda()
+                #changed = changed + noise
                 wider.state_dict()[param_tensor].copy_(changed)
                 
 
@@ -113,18 +117,21 @@ def net_transform_wider(net, wider):
                         first = 0
                         cop = (net.state_dict()[param_tensor]).clone().detach()
                         new = cop.data[perm3]
+                        noise3 = torch.Tensor((0.03)*np.random.normal(0,1,new.shape)).cuda()
+                        #new = new + noise3
                         toadd = torch.cat((cop, new), axis=0)
 
-                        ## NOISE
-                        noise2 = torch.Tensor((0.001)*np.random.normal(0,1,toadd.shape)).cuda()
-                        toadd = toadd + noise2
-
+                        #NOISE
+                        noise = torch.Tensor((0.03)*np.random.normal(0,1,toadd.shape)).cuda()
+                        #toadd = toadd + noise
                         wider.state_dict()[param_tensor].copy_(toadd)
                         third = 1
                     else:
                         cop = (net.state_dict()[param_tensor]).clone().detach()
                         new = cop.clone().detach().data[:, perm, :, :]
                         new = new/2
+                        noise4 = torch.Tensor((0.03)*np.random.normal(0,1,new.shape)).cuda()
+                        #new = new + noise4
                         cop[:, perm, :, :] = new
                         changed = torch.cat((cop, new), axis=1)
                         first = 0
@@ -134,12 +141,13 @@ def net_transform_wider(net, wider):
                             perm3 = torch.randperm(net.state_dict()[param_tensor].shape[0])
                             perm3 = perm3[:df]
                             new2 = changed[perm3, :, :, :]
+                            noise5 = torch.Tensor((0.03)*np.random.normal(0,1,new2.shape)).cuda()
+                            #new2 = new2 + noise5
                             changed = torch.cat((changed, new2), axis=0)
                         else: #last 
                             third = 0
-                        ##NOISE
-                        noise3 = torch.Tensor((0.001)*np.random.normal(0,1,changed.shape)).cuda()
-                        changed = changed + noise3
+                        noise = torch.Tensor((0.03)*np.random.normal(0,1,changed.shape)).cuda()
+                        #changed = changed + noise
                         wider.state_dict()[param_tensor].copy_(changed)
                     curr_out = c_out
                     
@@ -147,25 +155,29 @@ def net_transform_wider(net, wider):
                     cop = (net.state_dict()[param_tensor]).clone().detach()
                     new = cop.clone().detach().data[:, perm, :, :]
                     new = new/2
+                    noise6 = torch.Tensor((0.03)*np.random.normal(0,1,new.shape)).cuda()
+                    #new = new + noise6
                     cop[:, perm, :, :] = new
                     changed = torch.cat((cop, new), axis=1)
                     diff = wider.state_dict()[param_tensor].shape[0] - net.state_dict()[param_tensor].shape[0]
                     if (diff > 0):
                         new2 = changed[perm3, :, :, :]
+                        noise7 = torch.Tensor((0.03)*np.random.normal(0,1,new2.shape)).cuda()
+                        #new2 = new2 + noise7
                         changed = torch.cat((changed, new2), axis=0)
                     
-                    ##NOISE
-                    noise4 = torch.Tensor((0.001)*np.random.normal(0,1,changed.shape)).cuda()
-                    changed = changed + noise4
+                    noise = torch.Tensor((0.03)*np.random.normal(0,1,changed.shape)).cuda()
+                    #changed = changed + noise
                     wider.state_dict()[param_tensor].copy_(changed)
 
             elif("conv2" in param_tensor):
                 cop3 = (net.state_dict()[param_tensor]).clone().detach()
                 new3 = cop3[perm, :, :, :]
+                noise8 = torch.Tensor((0.03)*np.random.normal(0,1,new3.shape)).cuda()
+                #new3 = new3 + noise8
                 toadd3 = torch.cat((cop3, new3), axis=0)
-                ##NOISE
-                noise5 = torch.Tensor((0.001)*np.random.normal(0,1,toadd3.shape)).cuda()
-                toadd3 = toadd3 + noise5
+                noise = torch.Tensor((0.03)*np.random.normal(0,1,toadd3.shape)).cuda()
+                #toadd3 = toadd3 + noise
                 wider.state_dict()[param_tensor].copy_(toadd3)
 
             else :
@@ -183,6 +195,8 @@ def net_transform_wider(net, wider):
                         if (bb > 0):
                             new2 = cop.clone().detach().data[:, perm3_old, :, :]
                             new2 = new2/2
+                            noise9 = torch.Tensor((0.03)*np.random.normal(0,1,new2.shape)).cuda()
+                            #new2 = new2 + noise9
                             cop[:, perm3_old, :, :] = new2
                             cop = torch.cat((cop, new2), axis=1)
                         new = cop.data[perm3]
@@ -190,6 +204,8 @@ def net_transform_wider(net, wider):
                     else:
                         new2 = cop.clone().detach().data[:, perm3, :, :]
                         new2 = new2/2
+                        noise10 = torch.Tensor((0.03)*np.random.normal(0,1,new2.shape)).cuda()
+                        #new2 = new2 + noise10
                         cop[:, perm3, :, :] = new2
                         cop = torch.cat((cop, new2), axis=1)
 
@@ -197,19 +213,16 @@ def net_transform_wider(net, wider):
                     new = cop.data[perm3]
                 #print(param_tensor)
                 toadd = torch.cat((cop, new), axis=0)
-                ##NOISE
-                noise6 = torch.Tensor((0.001)*np.random.normal(0,1,toadd.shape)).cuda()
-                toadd = toadd + noise6
                 wider.state_dict()[param_tensor].copy_(toadd)
                     
     return 
 
 ncfg= [(1,  16, 1, 1),
-       (6,  24, 2, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
-       (6,  36, 3, 2),
-       (6,  72, 4, 2),
-       (6,  108, 3, 1),
-       (6, 180, 3, 2),
+       (6,  30, 2, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
+       (6,  40, 3, 2),
+       (6,  80, 4, 2),
+       (6, 120, 3, 1),
+       (6, 200, 3, 2),
        (6, 320, 1, 1)]
 
 
@@ -231,30 +244,20 @@ if args.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/ckpt06_middle.pth')
+    checkpoint = torch.load('./checkpoint/ckpt.pth')
     net.load_state_dict(checkpoint['net'])
-    #for param_tensor in net.state_dict():
-        #print(param_tensor, "\t", net.state_dict()[param_tensor].size())
-        #new_t = param_tensor
-        #net.state_dict()[param_tensor] = checkpoint['net'][new_t]
-    best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
     print(best_acc)
     print(start_epoch)
 
-"""
-print('==> Resuming from checkpoint..')
-assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-checkpoint = torch.load('./checkpoint/ckpt.pth')
-net.load_state_dict(checkpoint['net'])    
-best_acc = checkpoint['acc']
-start_epoch = checkpoint['epoch']
-"""
+
 ### Change this part as well
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                      momentum=0.9, weight_decay=5e-4)
+                      momentum=0.9, weight_decay=5e-4) #original value : 5e-4
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+#scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = 0.95)
+
 
 # Training
 def train(epoch, nt = net):
@@ -296,8 +299,8 @@ def test(epoch, nt):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            run["train/loss"].log(loss.item())
-            run["train/acc"].log(100. * correct / total)
+            run["eval/loss"].log(loss.item())
+            run["eval/acc"].log(100. * correct / total)
 
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                          % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
@@ -312,21 +315,29 @@ def test(epoch, nt):
         }
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt08_150epoch.pth')
+        torch.save(state, './checkpoint/ckpt20_small_net.pth')
         best_acc = acc
 
-#test(0, net)
-new_weights = net_transform_wider(net, wider_net)
+test(0, net)
+#new_weights = net_transform_wider(net, wider_net)
 #test(0, wider_net)
 
+#ff = open("learningrate.txt", "a")
 
 
-for epoch in range(start_epoch, start_epoch+150):
+for epoch in range(start_epoch, start_epoch+200):
+    my_lr = scheduler.get_lr()
+    run["learning_rate"].log(my_lr)
+    print("my_lr : ", my_lr)
+    #ff.write(str(my_lr[0])+"\n")
     train(epoch, nt = net)
     test(epoch, net)
     scheduler.step()
+ 
+#ff.close()   
 
-## 1. Change The Loop above
-## 2. Change optimizer etc
-## 3. Change checkpoint name
+
+## 1. Change The Loop above (epochs, net name)
+## 2. Change optimizer etc (net name, Tmax)
+## 3. Change checkpoint name (resume, test())
 ## 4. network_transform_wider

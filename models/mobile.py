@@ -33,11 +33,13 @@ class Block(nn.Module):
         
 
     def forward(self, x):
+        
         out = F.relu(self.bn1(self.conv1(x)))
         out = F.relu(self.bn2(self.conv2(out)))
         out = self.bn3(self.conv3(out))
         if(self.stride == 1):
             out = out + self.shortcut(x)
+        
         return out
 
 CFG = [(1,  16, 1, 1),
